@@ -1,0 +1,5 @@
+train: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic-clean/train/images
+val:  /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic-clean/test/images
+
+nc: 1
+names: ['r']

@@ -1,0 +1,6 @@
+train: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic.v3i.yolov5pytorch/train/images
+#val:  /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic.v3i.yolov5pytorch/valid/images
+val:  /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic.v3i.yolov5pytorch/test/images
+
+nc: 1
+names: ['0']

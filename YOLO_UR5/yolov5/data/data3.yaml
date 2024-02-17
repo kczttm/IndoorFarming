@@ -1,0 +1,5 @@
+train: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Artificial_Blackberry_LevelC_v2/train/images
+val: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Artificial_Blackberry_LevelC_v2/valid/images
+
+nc: 1
+names: ['Blackberries']
