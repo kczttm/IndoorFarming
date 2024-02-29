@@ -389,9 +389,9 @@ while (num_berries != 0):
         # print("\nY Disparity = ", yDisparity)
         worldImageConversion = baseline * np.cos(tilt) / xDisparity
 
+        # z calculation uses disparity in x and y and averages in case they give different results. With horizontal baseline, there shouldn't be disparity in y
         # zMOVE = (((baseline*focal_length) / xDisparity) + ((baseline*focal_length) / yDisparity)) / 2 
         zMOVE = ((baseline*focal_length) / xDisparity)
-        # z calculation uses disparity in x and y and averages in case they give different results. With horizontal baseline, there shouldn't be disparity in y
 
         xOffsets = cam_x_offset - stereoX
         # print("\nX offsets = ", xOffsets)
