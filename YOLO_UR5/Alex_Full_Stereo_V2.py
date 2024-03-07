@@ -15,17 +15,21 @@ from utils.general import (LOGGER, check_file, check_img_size, check_imshow, che
                             increment_path, non_max_suppression, print_args, scale_coords, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, time_sync
-import SerialCommWithArduino as com
+# import SerialCommWithArduino as com
 importTimerFinish = time.perf_counter()
 print("\nTotal Time to Import Related Dependencies: " + str(importTimerFinish - importTimerStart) + "seconds \n")
 
 ## This script is for using stereo imaging depth estimation and does NOT use visual servoing. See "CompliantGripperIBVS_Yolo.py" for IBVS implementation of berry harvesting
 
-YOLO_WEIGHT_FILE = "./yolov5/runs/train/exp13/weights/best.pt"
+# YOLO_WEIGHT_FILE = "./yolov5/runs/train/exp13/weights/best.pt"
+YOLO_WEIGHT_FILE = "/Users/alex/Library/CloudStorage/OneDrive-GeorgiaInstituteofTechnology/Documents/Georgia_Tech/GTRI FarmHand/Code/IndoorFarming/YOLO_UR5/yolov5/runs/train/exp13/weights/best.pt"
+
 IMAGE_CENTER = [640, 360]
+
 # path = "C:\\Users\\dkumar75\\Documents\\BerryDetectionImages"
-max_intensity_threshhold = 180
-min_intensity_threshhold = 100
+max_intensity_threshold = 180
+min_intensity_threshold = 100
+
 # Text parameters.
 FONT_FACE = cv2.FONT_HERSHEY_SIMPLEX
 FONT_SCALE = 0.9
@@ -44,7 +48,9 @@ def yolo_detection(source, weights):
     device = select_device(device)
     global MODEL
     if MODEL is None:
-        MODEL = DetectMultiBackend(weights, device=device, dnn=False, data="./yolov5/data/data.yaml", fp16=False)
+        # MODEL = DetectMultiBackend(weights, device=device, dnn=False, data="./yolov5/data/data.yaml", fp16=False)
+        # Path for Macbook Pro 14 inch under Indoor Farming directory
+        MODEL = DetectMultiBackend(weights, device=device, dnn=False, data="/Users/alex/Library/CloudStorage/OneDrive-GeorgiaInstituteofTechnology/Documents/Georgia_Tech/GTRI FarmHand/Code/IndoorFarming/YOLO_UR5/data.yaml", fp16=False)
     model = MODEL
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_img_size(imgsz, s=stride)  # check image size
@@ -146,6 +152,33 @@ def get_centroids_from_boxes(boxes):
     centroids[:,0] = (boxes[:,0] + boxes[:,2]) / 2
     centroids[:,1] = (boxes[:,1] + boxes[:,3]) / 2
     return np.int64(centroids)
+
+def apply_yolo_to_image(img):
+    final_boxes = None
+    while final_boxes is None:
+        print("in while")
+        boxes = yolo_detection(img, YOLO_WEIGHT_FILE)
+
+        if boxes is not None:
+            frame = cv2.imread(img)
+            for line in boxes:
+                cv2.rectangle(frame, (int(line[0]), int(line[1])), (int(line[2]), int(line[3])), (0,255,0), 3)
+                cv2.imwrite("apply_yolo_to_image_output.jpg", frame)
+            final_boxes = boxes
+        else:
+            print("Did not detect berries, trying again.")
+
+        centroids = get_centroids_from_boxes(final_boxes)
+
+        for i in range(centroids.shape[0]):
+            centroid = centroids[i]
+            x = int(centroid[0])
+            y = int(centroid[1])
+            image = cv2.imread("apply_yolo_to_image_output.jpg")
+            cv2.putText(image, str(centroid), (x, y - 80), FONT_FACE, FONT_SCALE, RED, THICKNESS, cv2.LINE_AA)
+            cv2.imwrite("apply_yolo_to_image_output.jpg", image)
+
+        return frame, centroids
 
 def get_berry_boxes_and_centroids(imageName, cam): 
 
@@ -276,224 +309,229 @@ def change_brightness_and_contrast(img, brightness=255, contrast=127):
  
     return cal
 
-# Initializing camera once to reduce inconsistency of camera initialization
-cam = cv2.VideoCapture(1)
+def main():
 
-# Variables
-img_count = 1
-baseline = 0.005
-# tilt = np.radians(1.6339)
-tilt = np.radians(1.5)
-focal_length = 891.77161
-cam_x_offset = -0.017
-cam_y_offset = 0.000
-pitch_angle = np.radians(0) # Angle of pitch (radians) if camera isn't aligned parallel to ground and drifts up or down when moving forward (z-direction)
-stereoX = baseline
-stereoY = 0
+    # Initializing camera once to reduce inconsistency of camera initialization
+    cam = cv2.VideoCapture(1)
 
-print("****************")
-print("STARTING PROGRAM")
-print("****************")
+    # Variables
+    img_count = 1
+    baseline = 0.005
+    # tilt = np.radians(1.6339)
+    tilt = np.radians(1.5)
+    focal_length = 891.77161
+    cam_x_offset = -0.017
+    cam_y_offset = 0.000
+    pitch_angle = np.radians(0) # Angle of pitch (radians) if camera isn't aligned parallel to ground and drifts up or down when moving forward (z-direction)
+    stereoX = baseline
+    stereoY = 0
 
-iteration = 1
+    print("****************")
+    print("STARTING PROGRAM")
+    print("****************")
 
-# Figure out how many berries to determine loop condition
-print("\nTaking initialization image.")
-init_boxes, init_centroids, initialImageTime, yoloDetectionTimeInitial = get_berry_boxes_and_centroids("Initialization_Image.jpg", cam)
+    iteration = 1
 
-print("\nInitial Image Time: ", initialImageTime)
-print("\nYolo Detection Time for Initial Image: ", yoloDetectionTimeInitial)
+    # Figure out how many berries to determine loop condition
+    print("\nTaking initialization image.")
+    init_boxes, init_centroids, initialImageTime, yoloDetectionTimeInitial = get_berry_boxes_and_centroids("Initialization_Image.jpg", cam)
 
-num_berries_init = init_centroids.shape[0]
-print("\nINITIAL NUMBER OF R4 BERRIES DETECTED: " + str(num_berries_init))
-print("\nCentroids: ", init_centroids)
-totalR4 = num_berries_init
+    print("\nInitial Image Time: ", initialImageTime)
+    print("\nYolo Detection Time for Initial Image: ", yoloDetectionTimeInitial)
 
-num_berries = num_berries_init
-berries_left = num_berries_init
+    num_berries_init = init_centroids.shape[0]
+    print("\nINITIAL NUMBER OF R4 BERRIES DETECTED: " + str(num_berries_init))
+    print("\nCentroids: ", init_centroids)
+    totalR4 = num_berries_init
 
-print("\nENTERING LOOP ------------------------")
+    num_berries = num_berries_init
+    berries_left = num_berries_init
 
-# Start loop for harvesting
-while (num_berries != 0):
+    print("\nENTERING LOOP ------------------------")
 
-    cycleStart = time.perf_counter()
+    # Start loop for harvesting
+    while (num_berries != 0):
 
-    print("\n\n\nStarting Stereo Calibration iteration: %2d" %iteration)
+        cycleStart = time.perf_counter()
 
-    # First stereo image 
-    boxes1, centroids1, firstStereoImageTime, yoloDetectionTimeFirst = get_berry_boxes_and_centroids("AAA_First_Stereo_Image.jpg", cam)
+        print("\n\n\nStarting Stereo Calibration iteration: %2d" %iteration)
 
-    print("\nFirst Stereo Image Time: ", firstStereoImageTime)
-    print("\nYolo Detection Time for First Stereo Image (included in above time): ", yoloDetectionTimeFirst)
+        # First stereo image 
+        boxes1, centroids1, firstStereoImageTime, yoloDetectionTimeFirst = get_berry_boxes_and_centroids("AAA_First_Stereo_Image.jpg", cam)
 
-    # print("\nCentroids 1: \n")
-    # print(centroids1)
-    centroids1 = centroids1[centroids1[:, 0].argsort()]
-    # print("\nCentroids 1 sorted: \n")
-    # print(centroids1)
+        print("\nFirst Stereo Image Time: ", firstStereoImageTime)
+        print("\nYolo Detection Time for First Stereo Image (included in above time): ", yoloDetectionTimeFirst)
 
-    print("\nMoving robot to horizontal baseline position.")
-    t1 = time.perf_counter()
+        # print("\nCentroids 1: \n")
+        # print(centroids1)
+        centroids1 = centroids1[centroids1[:, 0].argsort()]
+        # print("\nCentroids 1 sorted: \n")
+        # print(centroids1)
 
-    move_robot([stereoX, stereoY, 0, 0, 0, 0])
+        print("\nMoving robot to horizontal baseline position.")
+        t1 = time.perf_counter()
 
-    t2 = time.perf_counter()
-    print("Initial Horizontal Baseline Shift Move Command Time: ", (t2 - t1))
-    time.sleep(1)
+        move_robot([stereoX, stereoY, 0, 0, 0, 0])
 
-    # Take second stereo image
-    print("\nTaking second stereo calibration image.")
+        t2 = time.perf_counter()
+        print("Initial Horizontal Baseline Shift Move Command Time: ", (t2 - t1))
+        time.sleep(1)
 
-    boxes2, centroids2, secondStereoImageTime, yoloDetectionTimeSecond = get_berry_boxes_and_centroids("AAA_Second_Stereo_Image.jpg", cam)
+        # Take second stereo image
+        print("\nTaking second stereo calibration image.")
 
-    print("\nSecond Stereo Image Time: ", secondStereoImageTime)
-    print("\nYolo Detection Time for Second Stereo Image (included in above time): ", yoloDetectionTimeSecond)
+        boxes2, centroids2, secondStereoImageTime, yoloDetectionTimeSecond = get_berry_boxes_and_centroids("AAA_Second_Stereo_Image.jpg", cam)
 
-    # print("\nCentroids 2: \n")
-    # print(centroids2)
+        print("\nSecond Stereo Image Time: ", secondStereoImageTime)
+        print("\nYolo Detection Time for Second Stereo Image (included in above time): ", yoloDetectionTimeSecond)
 
-    centroids2 = centroids2[centroids2[:, 0].argsort()]
-    # print("\nCentroids 2 sorted: \n")
-    # print(centroids2)
+        # print("\nCentroids 2: \n")
+        # print(centroids2)
 
-    adjustments = np.zeros((centroids1.shape[0], 1, 3)) # Matrix of stored adjustment values for each berry location
+        centroids2 = centroids2[centroids2[:, 0].argsort()]
+        # print("\nCentroids 2 sorted: \n")
+        # print(centroids2)
 
-    if centroids1.shape[0] != centroids2.shape[0]:
-        print("\nDid not detect same number of berries in 2nd image, exiting program")
-        exit()
+        adjustments = np.zeros((centroids1.shape[0], 1, 3)) # Matrix of stored adjustment values for each berry location
 
-    print("\nCentroids Matrix Shape: ", centroids1.shape[0])
+        if centroids1.shape[0] != centroids2.shape[0]:
+            print("\nDid not detect same number of berries in 2nd image, exiting program")
+            exit()
 
-    adjustmentCalculationTimeStart = time.perf_counter()
+        print("\nCentroids Matrix Shape: ", centroids1.shape[0])
 
-    for i in range(centroids1.shape[0]):
+        adjustmentCalculationTimeStart = time.perf_counter()
 
-        print("\nIteration = ", i)
+        for i in range(centroids1.shape[0]):
 
-        # Get x1, y1 from first image
-        firstCentroid = centroids1[i]
-        # print("\nFirst Centroid: ", firstCentroid)
-        x1, y1 = firstCentroid[0], firstCentroid[1]
+            print("\nIteration = ", i)
 
-        # Get x2, y2 from second image
-        secondCentroid = centroids2[i]
-        # print("\nSecond Centroid: ", secondCentroid)
-        x2, y2 = secondCentroid[0], secondCentroid[1]
-    
-        # XYZ CALCULATIONS:
+            # Get x1, y1 from first image
+            firstCentroid = centroids1[i]
+            # print("\nFirst Centroid: ", firstCentroid)
+            x1, y1 = firstCentroid[0], firstCentroid[1]
 
-        xDisparity = np.abs(x2 - x1)
-        # print("\nX Disparity = ", xDisparity)
-        yDisparity = np.abs(y2 - y1)
-        # print("\nY Disparity = ", yDisparity)
-        worldImageConversion = baseline * np.cos(tilt) / xDisparity
-
-        # z calculation uses disparity in x and y and averages in case they give different results. With horizontal baseline, there shouldn't be disparity in y
-        # zMOVE = (((baseline*focal_length) / xDisparity) + ((baseline*focal_length) / yDisparity)) / 2 
-        zMOVE = ((baseline*focal_length) / xDisparity)
-
-        xOffsets = cam_x_offset - stereoX
-        # print("\nX offsets = ", xOffsets)
-        xError = worldImageConversion * (IMAGE_CENTER[0] - x1)
-        # print("\nX error = ", xError)
-        xMOVE = xOffsets - xError
-        # print("\nX adjustment = (", xOffsets, ") - (", xError, ") = ", xMOVE)
-        ## Image center is offset by camera offset from center of gripper 
-        ## StereoX is baseline translation between 1st and 2nd image, should
-
-        yOffsets = cam_y_offset - stereoY
-        # print("\nY offsets = ", yOffsets)
-        pitchOffset = -zMOVE * np.sin(pitch_angle)
-        # print("\nPitch offset = ", pitchOffset)
-        yError = -worldImageConversion * (IMAGE_CENTER[1] - y1) # Negated because camera is flipped upside down to match camera axes
-        # print("\nY error = ", yError)
-        yMOVE = pitchOffset + yOffsets + yError
-        # print("\nY Adjustment = (", pitchOffset, ") + (", yOffsets, ") + (", yError, ") = ", yMOVE)
-        adjustments[i][0][0], adjustments[i][0][1], adjustments[i][0][2] = xMOVE, yMOVE, zMOVE
-
-    adjustmentCalculationTimeEnd = time.perf_counter()
-    print("All Berries Adjustment Calculations Time: ", (adjustmentCalculationTimeEnd - adjustmentCalculationTimeStart))
-
-    print("\nCalculated offsets for each berry: \n")
-    print(adjustments)
-
-    if iteration == 3:
-        xMOVE = adjustments[0][0][0]
-        yMOVE = adjustments[0][0][1] - 0.003
-        zMOVE = adjustments[0][0][2]
-    elif iteration == 2:
-        xMOVE = adjustments[0][0][0]
-        yMOVE = adjustments[0][0][1] - 0.003
-        zMOVE = adjustments[0][0][2]
-    else:
-        xMOVE = adjustments[0][0][0]
-        yMOVE = adjustments[0][0][1] - 0.003
-        zMOVE = adjustments[0][0][2]
-
-    # Move gripper back to 1st stereo position
-    print("\nMoving back to 1st stereo imaging home position.")
-    t1 = time.perf_counter()
-    move_robot([-stereoX, -stereoY, 0, 0, 0, 0])
-    t2 = time.perf_counter()
-
-    print("Move Arm Back to Home Position Before Approach Time: ", (t2 - t1))
+            # Get x2, y2 from second image
+            secondCentroid = centroids2[i]
+            # print("\nSecond Centroid: ", secondCentroid)
+            x2, y2 = secondCentroid[0], secondCentroid[1]
         
-    # CENTERING MOVEMENT WITH CAMERA OFFSET
+            # XYZ CALCULATIONS:
 
-    print("\nX offset: " + str(xMOVE) + ". Y offset: " + str(yMOVE) + ". Z offset: " + str(zMOVE))
-    
-    t1 = time.perf_counter()
-    time.sleep(1)
-    initialXCommand = xMOVE + stereoX
-    initialYCommand = yMOVE + stereoY
-    initialZCommand = zMOVE
-    move_robot([initialXCommand, initialYCommand, 0, 0, 0, 0])
-    move_robot([0, 0, initialZCommand - 0.041, 0, 0, -np.pi/2])
-    t2 = time.perf_counter()
-    print("\nInitial Approach Time: ", (t2 - t1))
+            xDisparity = np.abs(x2 - x1)
+            # print("\nX Disparity = ", xDisparity)
+            yDisparity = np.abs(y2 - y1)
+            # print("\nY Disparity = ", yDisparity)
+            worldImageConversion = baseline * np.cos(tilt) / xDisparity
 
-    time.sleep(0.75)
-    t1 = time.perf_counter()
-    com.startGrip() # Communicate with arduino to initiate half grip
-    time.sleep(1)
-    move_robot([0, 0, 0.04 - 0.04, 0, 0, 0])
-    t2 = time.perf_counter()
+            # z calculation uses disparity in x and y and averages in case they give different results. With horizontal baseline, there shouldn't be disparity in y
+            # zMOVE = (((baseline*focal_length) / xDisparity) + ((baseline*focal_length) / yDisparity)) / 2 
+            zMOVE = ((baseline*focal_length) / xDisparity)
 
-    print("\nStart Grip and Move Robot Forward in Z Time: ", (t2 - t1))
+            xOffsets = cam_x_offset - stereoX
+            # print("\nX offsets = ", xOffsets)
+            xError = worldImageConversion * (IMAGE_CENTER[0] - x1)
+            # print("\nX error = ", xError)
+            xMOVE = xOffsets - xError
+            # print("\nX adjustment = (", xOffsets, ") - (", xError, ") = ", xMOVE)
+            ## Image center is offset by camera offset from center of gripper 
+            ## StereoX is baseline translation between 1st and 2nd image, should
 
-    t1 = time.perf_counter()
+            yOffsets = cam_y_offset - stereoY
+            # print("\nY offsets = ", yOffsets)
+            pitchOffset = -zMOVE * np.sin(pitch_angle)
+            # print("\nPitch offset = ", pitchOffset)
+            yError = -worldImageConversion * (IMAGE_CENTER[1] - y1) # Negated because camera is flipped upside down to match camera axes
+            # print("\nY error = ", yError)
+            yMOVE = pitchOffset + yOffsets + yError
+            # print("\nY Adjustment = (", pitchOffset, ") + (", yOffsets, ") + (", yError, ") = ", yMOVE)
+            adjustments[i][0][0], adjustments[i][0][1], adjustments[i][0][2] = xMOVE, yMOVE, zMOVE
 
-    time.sleep(2)
-    com.finishGrip()
-    time.sleep(0.75)
+        adjustmentCalculationTimeEnd = time.perf_counter()
+        print("All Berries Adjustment Calculations Time: ", (adjustmentCalculationTimeEnd - adjustmentCalculationTimeStart))
 
-    t2 = time.perf_counter()
-    
-    print("\nFinish Gripping Time: ", (t2 - t1))
+        print("\nCalculated offsets for each berry: \n")
+        print(adjustments)
 
-    returnHomeStart = time.perf_counter()
+        if iteration == 3:
+            xMOVE = adjustments[0][0][0]
+            yMOVE = adjustments[0][0][1] - 0.003
+            zMOVE = adjustments[0][0][2]
+        elif iteration == 2:
+            xMOVE = adjustments[0][0][0]
+            yMOVE = adjustments[0][0][1] - 0.003
+            zMOVE = adjustments[0][0][2]
+        else:
+            xMOVE = adjustments[0][0][0]
+            yMOVE = adjustments[0][0][1] - 0.003
+            zMOVE = adjustments[0][0][2]
 
-    # Return to home position and drop blackberries
-    move_robot([0, 0, -initialZCommand, 0, 0, 0])
-    time.sleep(1)
-    com.startGrip()
-    move_robot([0, 0, 0, 0, 0, np.pi/2])
-    move_robot([-initialXCommand, -initialYCommand, 0, 0, 0, 0])
-    time.sleep(0.5)
-    com.ungrip()
+        # Move gripper back to 1st stereo position
+        print("\nMoving back to 1st stereo imaging home position.")
+        t1 = time.perf_counter()
+        move_robot([-stereoX, -stereoY, 0, 0, 0, 0])
+        t2 = time.perf_counter()
 
-    returnHomeEnd = time.perf_counter()
+        print("Move Arm Back to Home Position Before Approach Time: ", (t2 - t1))
+            
+        # CENTERING MOVEMENT WITH CAMERA OFFSET
 
-    print("\nReturn to Home Position and Drop Berry Time: ", (returnHomeEnd - returnHomeStart))
+        print("\nX offset: " + str(xMOVE) + ". Y offset: " + str(yMOVE) + ". Z offset: " + str(zMOVE))
+        
+        t1 = time.perf_counter()
+        time.sleep(1)
+        initialXCommand = xMOVE + stereoX
+        initialYCommand = yMOVE + stereoY
+        initialZCommand = zMOVE
+        move_robot([initialXCommand, initialYCommand, 0, 0, 0, 0])
+        move_robot([0, 0, initialZCommand - 0.041, 0, 0, -np.pi/2])
+        t2 = time.perf_counter()
+        print("\nInitial Approach Time: ", (t2 - t1))
 
-    cycleEnd = time.perf_counter()
-    print("\nTotal Approach + Harvesting Cycle Time (not including initial berry scan): " + str(cycleEnd - cycleStart))
-    time.sleep(1.5)
+        time.sleep(0.75)
+        t1 = time.perf_counter()
+        com.startGrip() # Communicate with arduino to initiate half grip
+        time.sleep(1)
+        move_robot([0, 0, 0.04 - 0.04, 0, 0, 0])
+        t2 = time.perf_counter()
 
-    num_berries -= 1
-    iteration += 1
+        print("\nStart Grip and Move Robot Forward in Z Time: ", (t2 - t1))
 
-print("\nProgram finished.")
-totalTimerEnd = time.perf_counter()
-print("\nTotal Time Taken: ", (totalTimerEnd - totalTimerStart))
+        t1 = time.perf_counter()
+
+        time.sleep(2)
+        com.finishGrip()
+        time.sleep(0.75)
+
+        t2 = time.perf_counter()
+        
+        print("\nFinish Gripping Time: ", (t2 - t1))
+
+        returnHomeStart = time.perf_counter()
+
+        # Return to home position and drop blackberries
+        move_robot([0, 0, -initialZCommand, 0, 0, 0])
+        time.sleep(1)
+        com.startGrip()
+        move_robot([0, 0, 0, 0, 0, np.pi/2])
+        move_robot([-initialXCommand, -initialYCommand, 0, 0, 0, 0])
+        time.sleep(0.5)
+        com.ungrip()
+
+        returnHomeEnd = time.perf_counter()
+
+        print("\nReturn to Home Position and Drop Berry Time: ", (returnHomeEnd - returnHomeStart))
+
+        cycleEnd = time.perf_counter()
+        print("\nTotal Approach + Harvesting Cycle Time (not including initial berry scan): " + str(cycleEnd - cycleStart))
+        time.sleep(1.5)
+
+        num_berries -= 1
+        iteration += 1
+
+    print("\nProgram finished.")
+    totalTimerEnd = time.perf_counter()
+    print("\nTotal Time Taken: ", (totalTimerEnd - totalTimerStart))
+
+if __name__ == "__main__":
+    main()
