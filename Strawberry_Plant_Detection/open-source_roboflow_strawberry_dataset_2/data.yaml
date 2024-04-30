@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 4
+names: ['Flower', 'flower', 'no_ripe', 'ripe']
+
+roboflow:
+  workspace: strawberry-flower
+  project: strawberry-bx89a
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/strawberry-flower/strawberry-bx89a/dataset/2

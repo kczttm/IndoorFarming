@@ -1,0 +1,13 @@
+names:
+- Flower
+- Stigma
+nc: 2
+roboflow:
+  license: CC BY 4.0
+  project: strawberry-flower-detection
+  url: https://universe.roboflow.com/alex-qiu-ml/strawberry-flower-detection/dataset/1
+  version: 1
+  workspace: alex-qiu-ml
+test: ../test/images
+train: Strawberry-Flower-Detection-1/train/images
+val: Strawberry-Flower-Detection-1/valid/images
