@@ -1,3 +1,7 @@
 best.pt filter=lfs diff=lfs merge=lfs -text
 cv2.pyd filter=lfs diff=lfs merge=lfs -text
 YOLO_UR5/best.pt filter=lfs diff=lfs merge=lfs -text
+**/*.pts filter=lfs diff=lfs merge=lfs -text
+**/*.ply filter=lfs diff=lfs merge=lfs -text
+**/*.xyz filter=lfs diff=lfs merge=lfs -text
+**/*.ipynb filter=lfs diff=lfs merge=lfs -text
