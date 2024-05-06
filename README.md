@@ -41,6 +41,6 @@ uv pip install torch torchvision torchaudio
 
 Then install the following python libraries:
 ```
-uv pip install opencv-python pandas scipy scikit-learn matplotlib tqdm ipykernel ultralytics plotly roboflow
+uv pip install opencv-python pandas scipy scikit-learn matplotlib tqdm ipykernel ultralytics plotly roboflow nbformat
 ```
 
