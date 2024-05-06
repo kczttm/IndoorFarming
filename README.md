@@ -10,6 +10,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.cargo/env
 ```
 
+Activate the virtual environment
+```
+source .venv/bin/activate
+```
+
 ### Otherwise proceed to clone the repository.
 ```
 git clone https://github.com/kczttm/IndoorFarming.git
