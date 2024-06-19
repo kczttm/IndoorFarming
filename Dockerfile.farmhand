@@ -1,0 +1,34 @@
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
+#
+# edited by Chuizheng Kong 
+# on 05/07/2024
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ENV VIRTUAL_ENV=/usr/local
+ADD --chmod=755 https://astral.sh/uv/install.sh /install.sh
+RUN /install.sh && rm /install.sh
+ 
+RUN /root/.cargo/bin/uv pip install --system \
+    torch \
+    torchvision \
+    torchaudio \
+    opencv-python \
+    pandas \
+    scipy \
+    scikit-learn \
+    matplotlib \
+    tqdm \
+    ipykernel \
+    ultralytics \
+    plotly \
+    roboflow \
+    nbformat \
+    open3d
