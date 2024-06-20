@@ -16,19 +16,21 @@ ENV VIRTUAL_ENV=/usr/local
 ADD --chmod=755 https://astral.sh/uv/install.sh /install.sh
 RUN /install.sh && rm /install.sh
  
-RUN /root/.cargo/bin/uv pip install --system \
-    torch \
-    torchvision \
-    torchaudio \
-    opencv-python \
-    pandas \
-    scipy \
-    scikit-learn \
-    matplotlib \
-    tqdm \
-    ipykernel \
-    ultralytics \
-    plotly \
-    roboflow \
-    nbformat \
-    open3d
+# cache the installation of the following packages
+RUN --mount=type=cache,target=/root/.cache \
+    /root/.cargo/bin/uv pip install --system \
+        torch \
+        torchvision \
+        torchaudio \
+        opencv-python \
+        pandas \
+        scipy \
+        scikit-learn \
+        matplotlib \
+        tqdm \
+        ipykernel \
+        ultralytics \
+        plotly \
+        roboflow \
+        nbformat \
+        open3d
