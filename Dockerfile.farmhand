@@ -12,6 +12,7 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
+# figure out how to cache the installation of the following packages
 ENV VIRTUAL_ENV=/usr/local
 ADD --chmod=755 https://astral.sh/uv/install.sh /install.sh
 RUN /install.sh && rm /install.sh
@@ -34,3 +35,7 @@ RUN --mount=type=cache,target=/root/.cache \
         roboflow \
         nbformat \
         open3d
+
+RUN --mount=type=cache,target=/root/.cache \
+    /root/.cargo/bin/uv pip uninstall --system \
+        opencv-python-headless 

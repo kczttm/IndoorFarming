@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import os, sys
 np.set_printoptions(suppress=True)
-import matplotlib.pyplot as plt
 
 # Get the absolute path of the current script
 repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
@@ -84,36 +83,76 @@ def display_img_cv2(img, window_name="Image"):
     cv2.destroyAllWindows()
 
 
-def filter_flow(flow, multiple=1.0):
-    flow_x = flow[0, 0].cpu().numpy()
-    flow_y = flow[0, 1].cpu().numpy()
-    flow_magnitude = np.sqrt(flow_x**2 + flow_y**2)
-    print("Max_flow_x: ", np.max(abs(flow_x)))
+def display_flow(flow):
+    flow_viz = cv2.cvtColor(get_viz(flow), cv2.COLOR_RGB2BGR)
+    cv2.imshow("Flow Visualization", flow_viz)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows() 
 
-    threshold = 0.5*flow_magnitude.max() * multiple
-    print("Threshold: ", threshold)
 
-    # visualize the filtered flow on cv2
-    flow_filtered = np.where(np.abs(flow_x) < threshold, 0, flow_x) # New matrix of pixels that turn black (value set to 0) if not passing flow threshold
-    display_img_cv2(flow_filtered, window_name="Filtered Flow")
+def get_largest_flower_box(boxes):
+    max_area = 0
+    flower_box = None
 
-    flow_x[flow_magnitude < threshold] = np.inf
-    flow_y[flow_magnitude < threshold] = np.inf
+    for i in range(len(boxes.cls)):
+        if boxes.cls[i] == 0:  # Assuming class label 0 represents "flower"
+            box = boxes.xyxy[i]
+            area = (box[2] - box[0]) * (box[3] - box[1])
+            if area > max_area:
+                max_area = area
+                flower_box = box
 
-    return flow_x, flow_y
+    # convert to numpy array and round to integers
+    flower_box = np.round(flower_box.cpu().numpy()).astype(int)
 
+    # print("XYXY indices of the biggest flower box:", flower_box)
+    return flower_box
+
+
+def filter_flow(flow, flower_box, z_score_threshold=-0.3, visualize=True):
+    flow_x = flow[0, 0]
+    flow_y = flow[0, 1]
+    # Compute the magnitude of flow
+    flow_magnitude = torch.sqrt(flow_x**2 + flow_y**2)
+    flower_flow_magnitude = flow_magnitude[flower_box[1]:flower_box[3],
+                                        flower_box[0]:flower_box[2]]
+    mean_flower_flow = torch.mean(flower_flow_magnitude)
+    std_flower_flow = torch.std(flower_flow_magnitude)
+    flow_threshold = mean_flower_flow + z_score_threshold * std_flower_flow
+    print("Threshold: ", flow_threshold)
+
+    keep_bool = flow_magnitude >= flow_threshold
+    flower_mask = torch.zeros_like(flow_magnitude)
+    flower_mask[flower_box[1]:flower_box[3], flower_box[0]:flower_box[2]] = 1
+
+    if visualize:
+        # visualize the filtered flow on cv2
+        flow_filtered = torch.where(keep_bool, flow_magnitude, torch.tensor(0.0))
+        flow_filtered_w_mask = torch.where(flower_mask == 1, flow_filtered, torch.tensor(0.0))
+        display_img_cv2(flow_filtered_w_mask.cpu().numpy(), window_name="Filtered Flow")
+
+    kept_indices = torch.where(keep_bool, torch.tensor(1), torch.tensor(0))
+    kept_indices = torch.logical_and(kept_indices, flower_mask)
+
+    removed_indices = torch.where(kept_indices == 0, torch.tensor(1), torch.tensor(0))
+    flow_x[removed_indices] = torch.inf
+    flow_y[removed_indices] = torch.inf
+    
+    return flow_x.cpu().numpy(), flow_y.cpu().numpy(), kept_indices.cpu().numpy()
 
     
 # Converts pixel location (either matrix of pixels or single pixel) to tool frame coordinate system
-def pix_to_pos(pixel_x, pixel_y, flow_x_matrix, image_center_x, image_center_y):
+def pix_to_pos(pixel_x, pixel_y, flow_x_matrix, image_center_x, image_center_y, baseline_x=0.005):
+    # Fixed the bug that the 3d point cloud had the baseline offset included
+    # by Chuizheng Kong on 06/28/2024
 
     # Declare stereo related variables
-    baseline_x = 0.005; tilt = np.radians(0); focal_length = 474.2788 
+    tilt = np.radians(0); focal_length = 474.2788 
     cam_x_offset = 0; cam_y_offset = 0; pitch_angle = np.radians(0) 
 
     # Calculations
     world_conversion = baseline_x * np.cos(tilt) / flow_x_matrix # Calculating pixel to world conversion
-    x_offsets = cam_x_offset - baseline_x # Including camera offset from center of gripper (if using a horizontal offset)
+    x_offsets = cam_x_offset # Kong: Here was the bug
     x_translation_matrix = world_conversion * (image_center_x - pixel_x) # Calculating x translation using world conversion
 
     y_offsets = cam_y_offset
@@ -128,4 +167,38 @@ def pix_to_pos(pixel_x, pixel_y, flow_x_matrix, image_center_x, image_center_y):
     # Tuning matrix by getting rid of negative depths and zeros and make them infinity
     # z_coord = np.where(z_coord <= 0, np.inf, z_coord) 
 
+    # rotate 180 degrees about z-axis to match camera frame
+    x_coord = -x_coord
+    y_coord = -y_coord
+
     return x_coord, y_coord, z_coord
+
+
+def gen_3d_points(flow_x, flow_y, kept_indices, pic_spacing=0.005):
+    # Get the image center
+    image_center_x = flow_x.shape[1] / 2
+    image_center_y = flow_x.shape[0] / 2
+
+    # Generate 3D points
+    x, y = np.meshgrid(np.arange(flow_x.shape[1]), np.arange(flow_x.shape[0]))
+
+    x_coord, y_coord, z_coord = pix_to_pos(x, y, flow_x, image_center_x, image_center_y, baseline_x=pic_spacing)
+
+    # filter inf values
+    max_z_coord = np.round(np.max(z_coord[np.isfinite(z_coord)]), decimals=3)
+
+    x_coord_filtered = np.where(z_coord <= max_z_coord, x_coord, 0)
+    y_coord_filtered = np.where(z_coord <= max_z_coord, y_coord, 0)
+    z_coord_filtered = np.where(z_coord <= max_z_coord, z_coord, 0)
+
+    # filter out the points that are not in the flower box
+    x_p = x_coord_filtered[kept_indices]
+    y_p = y_coord_filtered[kept_indices]
+    z_p = z_coord_filtered[kept_indices]
+
+    return x_p, y_p, z_p
+
+
+def flower_further_extraction():
+    # use cv2.createBackgroundSubtractorMOG2() to extract the flower from the background
+    pass

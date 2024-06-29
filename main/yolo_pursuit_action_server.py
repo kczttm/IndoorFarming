@@ -14,7 +14,13 @@ from gen3_7dof.tool_box import TCPArguments
 from gen3_7dof.utilities import DeviceConnection
 
 import rclpy
+from rclpy.action import ActionServer, GoalResponse
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+
+from gen3_action_interface.action import YoloPursuit
+
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Pose
 from cv_bridge import CvBridge
@@ -25,37 +31,29 @@ from kortex_api.autogen.messages import Base_pb2
 
 class YoloVisualServoActionServer(Node):
     # Will make into action server later
-    def __init__(self, base):
+    def __init__(self, base=None):
         super().__init__('yolo_visual_servo_action_server')
         ## Kortex API declarations
+        self.tcp_args = TCPArguments()
         self.base = base
+        self.command = None
+        self.twist = None
+        self.desired_pose = None
+        self.R_d = None
+        self.EE_endo_mtx = None
+        self.reached = False
 
-        # Make sure the arm is in Single Level Servoing mode (high-level mode)
-        base_servo_mode = Base_pb2.ServoingModeInformation()
-        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
-        self.base.SetServoingMode(base_servo_mode)
-        
-        # kortex twist control mode
-        self.command = Base_pb2.TwistCommand()
-        # note that twist is naturally in tool frame, but this conversion made things a bit easy
-        self.command.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
-        self.command.duration = 0
+        # Action server for taking pictures
+        self._action_server = ActionServer(
+            self,
+            YoloPursuit,
+            'gen3_action/yolo_pursuit',
+            callback_group=ReentrantCallbackGroup(),
+            execute_callback=self.execute_callback,
+            goal_callback=self.goal_callback)
+        self._job_active = False
+        self._current_goal = None
 
-        # initialize command storage
-        self.twist = self.command.twist
-        self.twist.linear_x = 0.0 
-        self.twist.linear_y = 0.0
-        self.twist.linear_z = 0.0
-        self.twist.angular_x = 0.0
-        self.twist.angular_y = 0.0
-        self.twist.angular_z = 0.0 
-
-        ## Control Parameters
-        # assign initial desired pose as current pose
-        self.desired_pose = base.GetMeasuredCartesianPose()
-        self.R_d = getRotMtx(self.desired_pose)
-        EE_endo_tf = get_endoscope_tf_from_yaml()
-        self.EE_endo_mtx = tf_to_hom_mtx(EE_endo_tf)
 
         # control constants
         self.max_vel = 0.5-0.1  # m/s  0.5 is max
@@ -68,11 +66,11 @@ class YoloVisualServoActionServer(Node):
         self.percent_frame_height = 0.9 # note that this is the diagonal length of the box
 
         self.xy_P_gain = 0.7
-        self.z_P_gain = 0.9
+        self.z_P_gain = 1.0
 
         self.prev_pos_diff_endo = np.zeros(3)
         self.xy_D_gain = 1.0
-        self.z_D_gain = 1.5
+        self.z_D_gain = 1.3
         
         self.dcc_range = self.max_vel / (self.kp_pos * 2)  # dcc_range should be smaller than max_vel/kp_pos
         self.ang_dcc_range = self.max_w / (self.kp_ang * 6)
@@ -129,13 +127,16 @@ class YoloVisualServoActionServer(Node):
 
         # print(pos_diff_norm, eR2_norm)
 
-        reached = pos_diff_norm < self.eps_pos and eR2_norm < self.eps_ang
+        self.reached = pos_diff_norm < self.eps_pos and eR2_norm < self.eps_ang
         
-        if reached:
+        if self.reached:
             # print("Goal Pose reached")
             self.get_logger().info('Goal Pose reached')
+            self._current_goal.publish_feedback(YoloPursuit.Feedback(status='Goal Pose reached'))
             self.base.Stop()
-            self.destroy_node()
+            self._job_active = False
+            self._current_goal.succeed()
+            # self.destroy_node()
         else: 
             # print the current error
             self.get_logger().info('pos_diff_norm: %f, eR2_norm: %f' % (pos_diff_norm, eR2_norm))
@@ -191,37 +192,90 @@ class YoloVisualServoActionServer(Node):
             return None, None, None
 
     def image_callback(self, msg):
-        frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        boxes = detect_boxes_only(frame, confidence=0.7)
-        # get the largest "flower" box center pixel
-        center_x, center_y, length = self.get_largest_flower_box_center_and_length(boxes)
-        if center_x is not None:
-            self.no_flower_count = 0
-            # get desired center from frame
-            des_x, des_y = frame.shape[1] / 2, frame.shape[0] / 2
-            des_length = self.percent_frame_height*frame.shape[0] # % of the frame height'
-
-            self.IBVS_pos_only(center_x, center_y, length, des_x, des_y, des_length)
-        else:
-            self.no_flower_count += 1
-            if self.no_flower_count > 10:
-                self.base.Stop()
-                self.get_logger().info('No flower detected for 10 frames. Stopped robot.')
+        if self._job_active:
+            frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            boxes = detect_boxes_only(frame, confidence=0.7)
+            # get the largest "flower" box center pixel
+            center_x, center_y, length = self.get_largest_flower_box_center_and_length(boxes)
+            if center_x is not None:
                 self.no_flower_count = 0
-                # self.destroy_node()
+                # get desired center from frame
+                des_x, des_y = frame.shape[1] / 2, frame.shape[0] / 2
+                des_length = self.percent_frame_height*frame.shape[0] # % of the frame height'
+
+                self.IBVS_pos_only(center_x, center_y, length, des_x, des_y, des_length)
+            else:
+                self.no_flower_count += 1
+                if self.no_flower_count > 10:
+                    self.base.Stop()
+                    self.get_logger().info('No flower detected for 10 frames. Stopping robot.')
+                    self._current_goal.publish_feedback(YoloPursuit.Feedback(status='No flower detected for 10 frames. Stopping robot.'))
+                    self.no_flower_count = 0
+                    # self.destroy_node()
+                    self._job_active = False
+                    self._current_goal.abort() #### check this later
+
+    def goal_callback(self, goal_request):
+        self.get_logger().info('Received goal request')
+        return GoalResponse.ACCEPT
+    
+    
+    async def execute_callback(self, goal_handle):
+        self._current_goal = goal_handle
+        self.get_logger().info('Executing goal...')
+
+        with DeviceConnection.createTcpConnection(self.tcp_args) as router:
+            self.base = BaseClient(router)
+        
+            # Make sure the arm is in Single Level Servoing mode (high-level mode)
+            base_servo_mode = Base_pb2.ServoingModeInformation()
+            base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+            self.base.SetServoingMode(base_servo_mode)
+            
+            # kortex twist control mode
+            self.command = Base_pb2.TwistCommand()
+            # note that twist is naturally in tool frame, but this conversion made things a bit easy
+            self.command.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+            self.command.duration = 0
+
+            # initialize command storage
+            self.twist = self.command.twist
+            self.twist.linear_x = 0.0 
+            self.twist.linear_y = 0.0
+            self.twist.linear_z = 0.0
+            self.twist.angular_x = 0.0
+            self.twist.angular_y = 0.0
+            self.twist.angular_z = 0.0 
+
+            ## Control Parameters
+            # assign initial desired pose as current pose
+            self.desired_pose = self.base.GetMeasuredCartesianPose()
+            self.R_d = getRotMtx(self.desired_pose)
+            EE_endo_tf = get_endoscope_tf_from_yaml()
+            self.EE_endo_mtx = tf_to_hom_mtx(EE_endo_tf)
+
+            if goal_handle.request.des_yolo_diag is not None:
+                self.percent_frame_height = goal_handle.request.des_yolo_diag
+
+            # activating the job
+            self._job_active = True
+
+            # need to test if this is the correct waiting function in async env
+            while rclpy.ok() and self._job_active:
+                rclpy.spin_once(self)
+
+            
 
 
 def main(args=None):
     rclpy.init(args=args)
-    tcp_args = TCPArguments()
-    with DeviceConnection.createTcpConnection(tcp_args) as router:
-        # Create connection services
-        base = BaseClient(router)
-        robot_controller = YoloVisualServoActionServer(base)
-        rclpy.spin(robot_controller)
+    robot_controller = YoloVisualServoActionServer()
     
-    # robot_controller.destroy_node()
-    # rclpy.shutdown()
+    executor = MultiThreadedExecutor()
+
+    rclpy.spin(robot_controller, executor=executor)
+    rclpy.destroy_node(robot_controller)
+    rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
