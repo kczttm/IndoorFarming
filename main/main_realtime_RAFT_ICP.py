@@ -17,7 +17,7 @@ from ICP_tool_box import preprocess_point_cloud, np_to_o3d_point_cloud
 from ICP_tool_box import execute_global_registration, refine_registration
 
 
-DEBUG = False  # use images from the repo instead of taking pictures
+DEBUG = True  # use images from the repo instead of taking pictures
 
 def take_pictures(spacing=0.005):
     pictures = TakePicturesActionClient(spacing=spacing)
