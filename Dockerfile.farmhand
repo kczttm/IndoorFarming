@@ -34,7 +34,9 @@ RUN --mount=type=cache,target=/root/.cache \
         plotly \
         roboflow \
         nbformat \
-        open3d
+        open3d \
+        imutils \
+        pyserial 
 
 RUN --mount=type=cache,target=/root/.cache \
     /root/.cargo/bin/uv pip uninstall --system \

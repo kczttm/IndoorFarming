@@ -1,0 +1,1 @@
+Folder containing main scripts used for project. Uses functions from other folders on the same level as main (e.g. Path Planning, YOLO, RAFT)

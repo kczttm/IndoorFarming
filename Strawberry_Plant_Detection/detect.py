@@ -5,19 +5,14 @@ import numpy as np
 import os
 import torch
 
-def detect(input_image_name, confidence=0.9):
+def detect(frame, confidence=0.6):
     repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
     # Absolute path for model weights
-    model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train3/weights/best.pt")
+    model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train9/weights/best.pt")
     # Move the model to the GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    results = model.predict(source=input_image_name, conf=confidence)
-
-    if isinstance(input_image_name, str):
-        frame = cv2.imread(input_image_name) # load image
-    else:
-        frame = input_image_name
+    results = model.predict(source=frame, conf=confidence)
 
     num_instances = len(results[0])
     print("Number of instances detected: ", num_instances)
@@ -65,16 +60,16 @@ def detect(input_image_name, confidence=0.9):
 
     return frame, boxes, num_flowers, num_stamen
 
-def detect_boxes_only(input_image_name, confidence=0.9):
+def detect_boxes_only(input_image_name, confidence=0.6):
     repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
     # Absolute path for model weights
-    model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train3/weights/best.pt")
+    model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train9/weights/best.pt")
     # Move the model to the GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    results = model.predict(source=input_image_name, conf=confidence)
+    results = model.predict(source=input_image_name, conf=confidence, verbose=False)
 
     num_instances = len(results[0])
-    print("Number of instances detected: ", num_instances)
+    # print("Number of instances detected: ", num_instances)
 
     return results[0].boxes
