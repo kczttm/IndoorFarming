@@ -57,7 +57,7 @@ def motor_command(txt, val):
     return data
 
 
-def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
+def auto_focus(SerialObj, cam_id=2, predefined_pos=0):
     time.sleep(1)
     # declare loop variables
     data_counter = 0

@@ -104,14 +104,14 @@ def draw_sahi_boxes(frame, pred_list, depth_img, CameraInfo, H_wd_rs=None):
         outside = point1[1] - box_height - 3 >= 0  # label fits outside box
         point2 = point1[0] + box_width, point1[1] - box_height - 3 if outside else point1[1] + box_height + 3
         # add bounding box text
-        # cv2.rectangle(frame, point1, point2, color, -1, cv2.LINE_AA)  # filled
+        cv2.rectangle(frame, point1, point2, color, -1, cv2.LINE_AA)  # filled
         cv2.putText(
             frame,
             label,
             (point1[0], point1[1] - 2 if outside else point1[1] + box_height + 2),
             0,
             text_size,
-            (255, 0, 0),
+            (0, 0, 0),
             thickness=text_th,
         )
     return frame, np.array(flower_centers)

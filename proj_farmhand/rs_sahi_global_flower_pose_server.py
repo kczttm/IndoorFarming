@@ -109,7 +109,7 @@ class RealSenseFlowerPosesActionServer(Node):
                                                                        pred_list, 
                                                                        self.depth_img, 
                                                                        self.intrinsics,
-                                                                       None)
+                                                                       H_wd_rs)
         # make frame twice as large
         annotated_image = cv2.resize(annotated_image, (int(w/1.5), int(h/1.5)))
         cv2.imshow("Object Detection", annotated_image)
@@ -167,7 +167,7 @@ class RealSenseFlowerPosesActionServer(Node):
                 joint_angles[1] = 0
                 joint_angles[5] = 70
                 # move to the initial joint angles
-                action_result = move_joints(self.base, joint_angles)
+                # action_result = move_joints(self.base, joint_angles)
 
                 self._job_active = True
                 # need to test if this is the correct waiting function in async env
@@ -175,7 +175,7 @@ class RealSenseFlowerPosesActionServer(Node):
                 while rclpy.ok() and self._job_active:
                     time.sleep(0.01)
                 
-                action_result = move_joints(self.base, self.init_joint_angles)
+                # action_result = move_joints(self.base, self.init_joint_angles)
 
         except Exception as e:
             self.get_logger().info('An error occurred: ' + str(e))
