@@ -1,17 +1,20 @@
 from ultralytics import YOLO
-from PIL import Image
 import cv2
 import numpy as np
 import os
 import torch
+import copy
+
+
+repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
+# Absolute path for model weights
+model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train9/weights/best.pt")
+# Move the model to the GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
+
 
 def detect(frame, confidence=0.6):
-    repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
-    # Absolute path for model weights
-    model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train9/weights/best.pt")
-    # Move the model to the GPU if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
     results = model.predict(source=frame, conf=confidence)
 
     num_instances = len(results[0])
@@ -61,15 +64,15 @@ def detect(frame, confidence=0.6):
     return frame, boxes, num_flowers, num_stamen
 
 def detect_boxes_only(input_image_name, confidence=0.6):
-    repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
-    # Absolute path for model weights
-    model = YOLO(repo_root+"/Strawberry_Plant_Detection/runs/detect/train9/weights/best.pt")
-    # Move the model to the GPU if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
     results = model.predict(source=input_image_name, conf=confidence, verbose=False)
 
     num_instances = len(results[0])
     # print("Number of instances detected: ", num_instances)
 
     return results[0].boxes
+
+
+def track(frame, confidence=0.6):
+    results = model.track(source=frame, conf=confidence, show=False, verbose=False)
+    annotated_frame = results[0].plot()
+    return annotated_frame, results[0].boxes

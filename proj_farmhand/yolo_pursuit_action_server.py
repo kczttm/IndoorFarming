@@ -1,5 +1,3 @@
-import cv2
-from PIL import Image
 import os, sys
 import numpy as np
 import time
@@ -7,7 +5,7 @@ import time
 # Get the absolute path of the current script
 repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
 # sys.path.append(repo_root)
-from Strawberry_Plant_Detection.detect import detect_boxes_only
+from Strawberry_Plant_Detection.detect import detect_boxes_only, track
 # source ros2_kinova_ws/install/setup.bash before running this script
 from gen3_7dof.tool_box import get_endoscope_tf_from_yaml, tf_to_hom_mtx
 from gen3_7dof.tool_box import getRotMtx, R2rot
@@ -185,13 +183,43 @@ class YoloVisualServoActionServer(Node):
             return center_x, center_y, diag
         else:
             return None, None, None
+        
+    def get_centerest_flower_box_center_and_length(self, boxes, frame):
+        # input: boxes (object detection results) (in device)
+        # output: center_x, center_y, length (as numpy)
+        min_dist = 100000
+        flower_box = None
+
+        for i in range(len(boxes.cls)):
+            if boxes.cls[i] == 0:
+                box = boxes.xyxy[i]
+                center_x = (box[0] + box[2]) / 2
+                center_y = (box[1] + box[3]) / 2
+                des_x, des_y = frame.shape[1] / 2, frame.shape[0] / 2
+                dist = np.sqrt((center_x - des_x)**2 + (center_y - des_y)**2)
+                if dist < min_dist:
+                    min_dist = dist
+                    flower_box = box
+
+        # get the center pixel of the largest "flower" box
+        if flower_box is not None:
+            flower_box = flower_box.cpu().numpy()
+            center_x = (flower_box[0] + flower_box[2]) / 2
+            center_y = (flower_box[1] + flower_box[3]) / 2
+            diag = np.sqrt((flower_box[2] - flower_box[0])**2 + (flower_box[3] - flower_box[1])**2)
+            # length = max(flower_box[2] - flower_box[0], flower_box[3] - flower_box[1])
+            return center_x, center_y, diag
+        else:
+            return None, None, None
 
     def image_callback(self, msg):
         if self._job_active:
             frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            boxes = detect_boxes_only(frame)
+            annotated_frame, boxes = track(frame)
+            # print(boxes)
             # get the largest "flower" box center pixel
-            center_x, center_y, length = self.get_largest_flower_box_center_and_length(boxes)
+            # center_x, center_y, length = self.get_largest_flower_box_center_and_length(boxes)
+            center_x, center_y, length = self.get_centerest_flower_box_center_and_length(boxes, frame)
             if center_x is not None:
                 self.no_flower_count = 0
                 # get desired center from frame

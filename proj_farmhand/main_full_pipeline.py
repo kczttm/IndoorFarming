@@ -181,7 +181,7 @@ def cv2_video_display():
 
 
 def main():
-    REAL_FLOWER = True
+    REAL_FLOWER = False
     if REAL_FLOWER:
         per_H = 0.5
     else:
@@ -229,10 +229,16 @@ def main():
 
     ################# Get to the bottom of the flower slowly #################
     ## Get the bottom of the flower pose in the fork frame after reorienting
-    fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
-    fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
-    fork_raise = -0.001 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
-    fork_angle = 5.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
+    if REAL_FLOWER:
+        fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
+        fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
+        fork_raise = -0.001 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
+        fork_angle = 5.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
+    else:
+        fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
+        fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
+        fork_raise = -0.001 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
+        fork_angle = 5.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
 
     # map the post-yolo endoscope frame to the post-reorienting polli_fork frame
     H_wd_polli_fork_init = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)

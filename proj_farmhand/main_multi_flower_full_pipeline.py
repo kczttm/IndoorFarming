@@ -19,9 +19,14 @@ from proj_farmhand.ICP_tool_box import preprocess_point_cloud, np_to_o3d_point_c
 from proj_farmhand.ICP_tool_box import execute_global_registration, refine_registration
 from proj_farmhand.ICP_tool_box import rotation_matrix_to_euler, rotate_frame_on_ball
 
+from proj_farmhand.arduino_interfaces_tool_box import arduino_connect, auto_focus
+
+from proj_farmhand.rs_sahi_global_flower_pose_client import main as RealSenseFlowerPosesActionClient
+
 from gen3_7dof.take_pictures_action_client import main as TakePicturesActionClient
 from gen3_7dof.tool_box import get_endoscope_tf_from_yaml, get_polli_fork_tf_from_yaml, tf_to_hom_mtx, H_mtx_to_kinova_pose_in_base
-from gen3_7dof.tool_box import TCPArguments, move_tool_pose_absolute, get_world_EE_HomoMtx
+from gen3_7dof.tool_box import get_realsense_on_link1_HomoMtx, euler_to_rotation_matrix
+from gen3_7dof.tool_box import TCPArguments, move_tool_pose_absolute, get_world_EE_HomoMtx, get_joint_angles, move_joints
 from gen3_7dof.utilities import DeviceConnection
 
 from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
@@ -35,7 +40,33 @@ def robot_take_pictures(spacing=0.005):
     pictures = TakePicturesActionClient(spacing=spacing)
     return pictures[0], pictures[-1]
 
-def robot_pose_estimation(visualize=False):
+def realsense_get_flower_poses(sahi_n_slices = 2):
+    # returns flower poses in the camera frame (n-by-3 numpy array)
+    tcp_args = TCPArguments()
+    with DeviceConnection.createTcpConnection(tcp_args) as router:
+        base = BaseClient(router)
+        base_servo_mode = Base_pb2.ServoingModeInformation()
+        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+        base.SetServoingMode(base_servo_mode)
+
+        # get current joint angles
+        joint_angles_init = get_joint_angles(base)
+        try:
+            H_wd_rs = get_realsense_on_link1_HomoMtx(base)
+            print("Realsense Pose in World Frame: \n", H_wd_rs)
+            # take pictures
+            flower_poses = RealSenseFlowerPosesActionClient(sahi_n_slices=sahi_n_slices)
+
+            # trim the outliers
+            flower_poses_wd = flower_poses_wd[flower_poses_wd[:,2] < 2]
+            # sort the flower poses by y-axis
+            flower_poses_wd = flower_poses_wd[flower_poses_wd[:,1].argsort()]
+        except:
+            flower_poses_wd = None 
+
+    return flower_poses_wd, joint_angles_init
+
+def robot_pose_estimation(visualize=False, real_flower=False):
     RAFT_model = load_model()
     pic_spacing = 0.005
 
@@ -48,7 +79,7 @@ def robot_pose_estimation(visualize=False):
     final_flow = flow_iters[-1]
     if visualize:
         display_flow(final_flow)
-    boxes = detect_boxes_only(frame1, confidence=0.7)
+    boxes = detect_boxes_only(frame1)
     flower_box = get_largest_flower_box(boxes)
     flow_x, flow_y, kept_idx = filter_flow(final_flow, flower_box, visualize=False)
 
@@ -59,7 +90,7 @@ def robot_pose_estimation(visualize=False):
     print("Remaining target flower Points Shape: ", target_flower_3d_points.shape)
 
     target_flower_pcd = np_to_o3d_point_cloud(target_flower_3d_points)
-    template_flower_pcd = get_flower_template_pcd(visualize=False)
+    template_flower_pcd = get_flower_template_pcd(visualize=False, real_flower=real_flower)
 
     # Preprocess the point clouds
     voxel_size = 0.001
@@ -123,6 +154,22 @@ def robot_move_in_endoscope_frame_relative(H_endo_des, speed=None):
         p_des_kinova = np.array([p_world[0], p_world[1], p_world[2], r_wd, p_wd, y_wd])
         action_result = move_tool_pose_absolute(base, p_des_kinova, speed=speed)
         return H_wd_ee_des, p_des_kinova
+    
+
+def robot_move_in_endoscope_frame_absolute(H_wd_endo_des, speed=None):
+    EE_endo_tf = get_endoscope_tf_from_yaml()
+    tcp_args = TCPArguments()
+    with DeviceConnection.createTcpConnection(tcp_args) as router:
+        base = BaseClient(router)
+        # Make sure the arm is in Single Level Servoing mode (high-level mode)
+        base_servo_mode = Base_pb2.ServoingModeInformation()
+        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+        base.SetServoingMode(base_servo_mode)
+
+        H_wd_ee_des = H_wd_endo_des @ np.linalg.inv(tf_to_hom_mtx(EE_endo_tf))
+        p_des_kinova = H_mtx_to_kinova_pose_in_base(H_wd_ee_des)
+        action_result = move_tool_pose_absolute(base, p_des_kinova, speed=speed)
+        return H_wd_ee_des, p_des_kinova
 
 
 def robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=None):
@@ -151,6 +198,14 @@ def get_current_EE_pose():
         return H_wd_ee, p_curr_kinova
     
 
+def get_current_RS_pose():
+    tcp_args = TCPArguments()
+    with DeviceConnection.createTcpConnection(tcp_args) as router:
+        base = BaseClient(router)
+        H_wd_rs = get_realsense_on_link1_HomoMtx(base)
+        return H_wd_rs
+    
+
 def robot_move_kinova_pose_series(p_kinova_series, velocity_series):
     tcp_args = TCPArguments()
     with DeviceConnection.createTcpConnection(tcp_args) as router:
@@ -160,87 +215,181 @@ def robot_move_kinova_pose_series(p_kinova_series, velocity_series):
     return action_result
 
 
-def main():
+def cv2_video_display():
+    cap = cv2.VideoCapture(4,cv2.CAP_V4L2)
+    width = 1920
+    height = 1080
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    while True:
+        ret, frame = cap.read()
+        cv2.imshow('frame', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=None):
+    # rs_flower_loc is the location of the flower in the world frame
+    # if it is None, the robot will move to the nearest flower in endoscope frame
+    EE_endo_tf = get_endoscope_tf_from_yaml()
+    EE_polli_fork_tf = get_polli_fork_tf_from_yaml()
+
+    if rs_flower_loc is not None:
+        # all pose below are in world frame
+        H_wd_rs = get_current_RS_pose()
+        p_rs = H_wd_rs[:3,3]  # realsense cam pose in world frame
+        # draw a straight line from the realsense cam to the flower
+        # put endoscope z-axis along the line
+        # put endoscope origin at _lambda:[0,1] along the line
+        des_z = rs_flower_loc - p_rs
+        p_endo_des = p_rs + _lambda*(des_z)
+        euler_z = np.arctan2(des_z[1], des_z[0])
+        euler_y = -np.arctan2(des_z[2], np.linalg.norm(des_z[:2]))
+        R_des_wd = euler_to_rotation_matrix(0, euler_y, euler_z)
+        
+        # trusting that this conversion between world and home camera conversion is correct
+        R_wd_cam = euler_to_rotation_matrix(-np.radians(90), 0, -np.radians(90))
+        
+        H_endo_des_wd = np.eye(4)
+        H_endo_des_wd[:3,:3] = R_des_wd @ R_wd_cam
+        H_endo_des_wd[:3,3] = p_endo_des
+        
+        H_wd_ee_des, p_rs_des_kinova = robot_move_in_endoscope_frame_absolute(H_endo_des_wd)
+
+
+    REAL_FLOWER = False
+    if REAL_FLOWER:
+        per_H = 0.5
+    else:
+        per_H = 0.80
+
     EE_endo_tf = get_endoscope_tf_from_yaml()
     EE_polli_fork_tf = get_polli_fork_tf_from_yaml()
 
     H_wd_ee, p_init_kinova = get_current_EE_pose()
     print("Initial Pose: \n", p_init_kinova)
 
-    ################# Move to the flower #################
-    robot_move_to_flower(percent_frame_height = 0.9)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Yolo Pursuit Pose: \n", p_curr_kinova)
-    H_wd_endo_yolo = H_wd_ee_curr @ tf_to_hom_mtx(EE_endo_tf)
+    # ################# Move to the flower #################
+    # robot_move_to_flower(percent_frame_height = per_H)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # print("Yolo Pursuit Pose: \n", p_curr_kinova)
+    # H_wd_endo_yolo = H_wd_ee_curr @ tf_to_hom_mtx(EE_endo_tf)
 
-    ################# Align to the flower Stem #################
-    H_flower_in_endo, template_pcd, flower_pcd = robot_pose_estimation(visualize = False)
-    ## Preparing to align the robot with the front face of the flower
+    # ################# Align to the flower Stem #################
+    # H_flower_in_endo, template_pcd, flower_pcd = robot_pose_estimation(visualize = False, real_flower = REAL_FLOWER)
+    # ## Preparing to align the robot with the front face of the flower
 
-    z_flower = H_flower_in_endo[:3, 2]
-    flower_pitch = np.arctan2(z_flower[0], z_flower[2])
-    # account for flipped flower pose estimation
-    if z_flower[-1] < 0:
-        flower_pitch = -flower_pitch
-    print("Pitch: ", np.degrees(flower_pitch))
+    # z_flower = H_flower_in_endo[:3, 2]
+    # flower_pitch = np.arctan2(z_flower[0], z_flower[2])
+    # print("Flower axis: ", z_flower)
+    # print("Flower Pitch: ", np.degrees(flower_pitch))
+    # # account for flipped flower pose estimation
+    # if z_flower[-1] < 0:
+    #     flower_pitch = flower_pitch - np.pi
+    # print("Pitch: ", np.degrees(flower_pitch))
     
     # draw_registration_result(template_pcd, flower_pcd, H_flower_in_endo)
 
-    H_endo_des = rotate_frame_on_ball(H_flower_in_endo[:3,3], 0, flower_pitch, 0)
+    # H_endo_des = rotate_frame_on_ball(H_flower_in_endo[:3,3], 0, flower_pitch, 0)
     # print("Desired Endoscope Pose: \n", H_endo_des)
 
-    H_wd_ee_des, p_orient_kinova = robot_move_in_endoscope_frame_relative(H_endo_des)
-    print("Desired Reorienting Pose: \n", p_orient_kinova)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Reorienting Pose error: ", p_orient_kinova - p_curr_kinova)
+    # H_wd_ee_des, p_orient_kinova = robot_move_in_endoscope_frame_relative(H_endo_des)
+    # # print("Desired Reorienting Pose: \n", p_orient_kinova)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # # print("Reorienting Pose error: ", p_orient_kinova - p_curr_kinova)
 
 
-    draw_registration_result(template_pcd, flower_pcd, H_flower_in_endo)
+    # # # draw_registration_result(template_pcd, flower_pcd, H_flower_in_endo)
 
-    ################# Get to the bottom of the flower slowly #################
-    ## Get the bottom of the flower pose in the fork frame after reorienting
-    # map the post-yolo endoscope frame to the post-reorienting polli_fork frame
-    H_wd_polli_fork_init = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
-    H_polli_fork_endo_yolo = np.linalg.inv(H_wd_polli_fork_init) @ H_wd_endo_yolo
+    # ################# Get to the bottom of the flower slowly #################
+    # ## Get the bottom of the flower pose in the fork frame after reorienting
+    # if REAL_FLOWER:
+    #     fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
+    #     fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
+    #     fork_raise = -0.001 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
+    #     fork_angle = 5.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
+    # else:
+    #     fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
+    #     fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
+    #     fork_raise = -0.001 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
+    #     fork_angle = 5.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
 
-    # find the lowest point of the flower in the fork frame
-    flower1_pcd_fork_frame = rotate_pcd_htm(np.asarray(template_pcd.points), H_polli_fork_endo_yolo @ H_flower_in_endo)
+    # # map the post-yolo endoscope frame to the post-reorienting polli_fork frame
+    # H_wd_polli_fork_init = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
+    # H_polli_fork_endo_yolo = np.linalg.inv(H_wd_polli_fork_init) @ H_wd_endo_yolo
 
-    bottom_idx = np.argmax(flower1_pcd_fork_frame[:,1])
-    bottom_y = flower1_pcd_fork_frame[bottom_idx,1]
-    bottom_z = flower1_pcd_fork_frame[bottom_idx,2]
-    p_flower_origin_fork_frame = H_polli_fork_endo_yolo @ H_flower_in_endo[:,3]
+    # # find the lowest point of the flower in the fork frame
+    # flower1_pcd_fork_frame = rotate_pcd_htm(np.asarray(template_pcd.points), H_polli_fork_endo_yolo @ H_flower_in_endo)
 
-    # print(bottom_y, bottom_z, p_flower_origin_fork_frame)
-    extend_z = max(bottom_z, p_flower_origin_fork_frame[2])
+    # bottom_idx = np.argmax(flower1_pcd_fork_frame[:,1])
+    # bottom_y = flower1_pcd_fork_frame[bottom_idx,1]
+    # bottom_z = flower1_pcd_fork_frame[bottom_idx,2]
+    # p_flower_origin_fork_frame = H_polli_fork_endo_yolo @ H_flower_in_endo[:,3]
+
+    # # print(bottom_y, bottom_z, p_flower_origin_fork_frame)
+    # extend_z = max(bottom_z, p_flower_origin_fork_frame[2])
     
-    H_polli_fork_des = np.eye(4)
-    H_polli_fork_des[0:3, 3] = [0.0, bottom_y+0.001, extend_z+0.007]
-    H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
-    H_wd_ee_des, p_polli_fork_des_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.03)
-    print("Desired Polli Fork Pose: \n", p_polli_fork_des_kinova)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Move to bottom Pose error: ", p_polli_fork_des_kinova - p_curr_kinova)
+    # H_polli_fork_des = np.eye(4)
+    # H_polli_fork_des[0:3, 3] = [p_flower_origin_fork_frame[0], bottom_y+fork_lower, extend_z+fork_depth]
+    # H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
+    # H_wd_ee_des, p_polli_fork_des_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.03)
+    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_kinova)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # print("Move to bottom Pose error: ", p_polli_fork_des_kinova - p_curr_kinova)
 
 
-    ################# raise to the center of the flower slowly #################
-    H_polli_fork_des[0:3, 3] = [0.0, p_flower_origin_fork_frame[1]-0.002, extend_z+0.007]
-    H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
-    H_wd_ee_des, p_polli_fork_des_center_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.01)
-    print("Desired Polli Fork Pose: \n", p_polli_fork_des_center_kinova)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Raise to center Pose error: ", p_polli_fork_des_center_kinova - p_curr_kinova)
-
-    ################# Keep moving slowly based on the vibration #################
-    input("Press Enter to continue...")
-    
-
-    ################# Return to the starting pose #################
-    p_kinova_series = [p_polli_fork_des_kinova, p_orient_kinova, p_init_kinova]
-    velocity_series = [0.05, None, None]  # None means default speed
+    # ################# raise to the center of the flower slowly #################
+    # H_polli_fork_des[0:3, 3] = [p_flower_origin_fork_frame[0], p_flower_origin_fork_frame[1]+fork_raise, extend_z+fork_depth]
+    # H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
+    # H_wd_ee_des, p_polli_fork_des_center_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.01)
+    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_center_kinova)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # print("Raise to center Pose error: ", p_polli_fork_des_center_kinova - p_curr_kinova)
 
 
-    robot_move_kinova_pose_series(p_kinova_series, velocity_series)
+    # ################# rotate +x of the fork frame and move -y #################
+    # H_polli_fork_des = np.eye(4)
+    # H_polli_fork_des[:3,:3] = euler_to_rotation_matrix(np.radians(fork_angle), 0, 0)
+    # H_polli_fork_des[0:3, 3] = [0.0, fork_raise, 0]
+    # H_polli_fork_curr = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
+    # H_wd_polli_fork_des = H_polli_fork_curr @ H_polli_fork_des
+    # H_wd_ee_des, p_polli_fork_des_rotated_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.08)
+    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_rotated_kinova)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # print("Raise to center Pose error: ", p_polli_fork_des_rotated_kinova - p_curr_kinova)
+
+    # ################# Keep moving slowly based on the vibration #################
+    # # try:
+    # #     cv2_video_display()
+    # # except KeyboardInterrupt:
+    # #     pass
+    # auto_focus(serial_obj)
+    # # input("Press Enter to continue...")
+
+    # ################# Return to the starting pose #################
+    # p_kinova_series = [p_polli_fork_des_kinova, p_orient_kinova, p_init_kinova]
+    # velocity_series = [0.05, None, None]  # None means default speed
+
+
+    # robot_move_kinova_pose_series(p_kinova_series, velocity_series)
+
+
+def main():
+    SerialObj = arduino_connect()
+    # first raise robot's third joint to take pictures
+    flower_poses_wd, joint_angles_init = realsense_get_flower_poses(sahi_n_slices = 2)
+    print(flower_poses_wd)
+    for i in range(flower_poses_wd.shape[0]):
+        robot_pollinate_single_flower(rs_flower_loc=flower_poses_wd[i], 
+                                      _lambda = 0.8,
+                                      serial_obj=SerialObj)
+        # move back to the initial pose
+        tcp_args = TCPArguments()
+        with DeviceConnection.createTcpConnection(tcp_args) as router:
+            base = BaseClient(router)
+            move_joints(base, joint_angles_init)
         
 
 if __name__ == '__main__':

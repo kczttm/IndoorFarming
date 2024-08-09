@@ -6,7 +6,7 @@ import os, sys
 # Get the absolute path of the current script
 repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
 sys.path.append(repo_root)
-from Strawberry_Plant_Detection.detect import detect
+from Strawberry_Plant_Detection.detect import track
 
 USE_ROS = True
 TEST_IMG = False
@@ -30,7 +30,8 @@ if USE_ROS:
 
         def image_callback(self, msg):
             frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-            annotated_image, boxes, num_flowers, num_stamen = detect(frame)
+            # annotated_image, boxes, num_flowers, num_stamen = detect(frame)
+            annotated_image, boxes = track(frame)
             # make frame twice as large
             annotated_image = cv2.resize(annotated_image, (annotated_image.shape[1]*2, annotated_image.shape[0]*2))
             cv2.imshow("Object Detection", annotated_image)

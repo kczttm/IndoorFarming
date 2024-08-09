@@ -51,6 +51,9 @@ setup(
             'yolo_pursuit_action_server = proj_farmhand.yolo_pursuit_action_server:main',
             'yolo_pursuit_action_client = proj_farmhand.yolo_pursuit_action_client:main',
             'main_pipeline = proj_farmhand.main_full_pipeline:main',
+            'rs_sahi_global_flower_pose_server = proj_farmhand.rs_sahi_global_flower_pose_server:main',
+            'rs_sahi_global_flower_pose_client = proj_farmhand.rs_sahi_global_flower_pose_client:main',
+            'main_multi_flower_pipeline = proj_farmhand.main_multi_flower_full_pipeline:main',
         ],
     },
 )

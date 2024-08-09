@@ -2,19 +2,20 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 
-from gen3_action_interfaces.action import YoloPursuit
+from gen3_action_interfaces.action import RealSenseFlowerPoses
 import cv2
 import numpy as np
+np.set_printoptions(suppress=True)
 
-class YoloVisualServoActionClient(Node):
+class RealSenseFlowerPosesActionClient(Node):
     def __init__(self):
-        super().__init__('yolo_visual_servo_action_client')
-        self.get_logger().info('YoloVisualServoActionClient started, waiting for action server...')
-        self._action_client = ActionClient(self, YoloPursuit, 'gen3_action/yolo_pursuit')
+        super().__init__('rs_flower_poses_action_client')
+        self.get_logger().info('RealSenseFlowerPosesActionClient started, waiting for action server...')
+        self._action_client = ActionClient(self, RealSenseFlowerPoses, 'realsense_action/flower_poses')
 
-    def send_goal(self, percent_frame_height):
-        goal_msg = YoloPursuit.Goal()
-        goal_msg.des_yolo_diag = percent_frame_height
+    def send_goal(self, sahi_n_slices):
+        goal_msg = RealSenseFlowerPoses.Goal()
+        goal_msg.sahi_n_slices = sahi_n_slices
         self._action_client.wait_for_server()
         
         self._send_goal_future = self._action_client.send_goal_async(
@@ -45,16 +46,21 @@ class YoloVisualServoActionClient(Node):
 
 
     
-def main(args=None, percent_frame_height = 0.7):
+def main(args=None, sahi_n_slices = 2):
     rclpy.init(args=args)
-    action_client = YoloVisualServoActionClient()
+    action_client = RealSenseFlowerPosesActionClient()
 
-    action_client.send_goal(percent_frame_height)
+    action_client.send_goal(sahi_n_slices)
     rclpy.spin(action_client)
     future = action_client._get_result_future
     result = future.result().result
-    print("Result: ", result)
     action_client.destroy_node()
+    # print("Flower Poses: ", np.array(result.result))
+    if len(result.result) == 0:
+        print("No flower data collected")
+        return np.array([])
+    else:
+        return np.array(result.result).reshape(-1, 3)
 
 if __name__ == '__main__':
     main()
