@@ -23,14 +23,15 @@ def arduino_connect(port='/dev/ttyUSB0'):
     # R - retract
     # E - extend
     # Z - zoom
-    # Number value - time if R/E, lin actuator position if P (min 0 max 630)
-    # servo position if Z
+    # G - get potentiometer value
+    # Number value - time if R/E, lin actuator position if P (min 0 max 635)
+    # servo position if Z, number does not matter for G
     ReceivedString = write_read(SerialObj, "<ABC 123;>")
     print(ReceivedString)
     
     return SerialObj
 
-# autofocus code from microscope company
+# autofocus score based on Zaber microscope example
 def calculate_focus_score(image, blur=9):
     # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) 
     # image_filtered = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -48,17 +49,27 @@ def write_read(SerialObj, input):
 def write_only(SerialObj, input):
     SerialObj.write(bytes(input, 'utf-8'))
 
+# construct a command in expected format
+def motor_command(txt, val):
+    str_val = str(val)
+    cmd = '<' + txt + ' ' + str_val + ';>'
+    data = write_read(cmd)
+    return data
+
+
 def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
     time.sleep(1)
     # declare loop variables
     data_counter = 0
     focus_score = 0
-    focus_score_max = 30 # for 1920x1080
+    focus_score_max = 100 # for 200 by 200 crop area
     fc_temp = 0
     fc_sum = 0
 
-    # fine level adjustment flags
-    s_coarse = True
+    # focus flags
+    hold_zoom = False
+    extend_flag = False
+    retract_flag = True
 
     # open camera
     cap = cv2.VideoCapture(cam_id, cv2.CAP_V4L2)
@@ -68,11 +79,6 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
     if not cap.isOpened():
         print("Cannot open camera")
         exit()  
-
-    # pos_str = "<P " + str(predefined_pos) + ";>"
-    # write_only(SerialObj, pos_str)
-    # print("moving to predefined position")
-    # s_coarse = False
 
     # autofocus loop
     while True:
@@ -84,8 +90,8 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
         
         # crop out the center of the frame
         h, w = frame.shape[:2]
-        h_des = 400
-        w_des = 400
+        h_des = 200
+        w_des = 200
         h_start = int((h - h_des)/2)
         w_start = int((w - w_des)/2)
         cent_crop = frame[h_start:h_start+h_des, w_start:w_start+w_des]
@@ -103,31 +109,35 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
             fc_sum = 0
             data_counter = 0
 
-            # microscope coarse-fine adjustment
-            if s_coarse:
+            # Microscope zoom focus decision tree
+            focus_timer += 1
+            potval = motor_command('G', 0)
+            if not hold_zoom and not focus_wait:
+                zoom_e = focus_score_max - focus_score
+                # print(zoom_e)
+                if zoom_e < 0:
+                    zoom_e = 0
+                kp = 1 / 40 # max zoom val (180 deg) / max variance val (in the thousands)
+                e_kp = zoom_e * kp
+                # print(e_kp)
                 if focus_score < focus_score_max:
-                    # moving down fast
-                    write_only(SerialObj, "<R 100;>")
-                elif focus_score >= focus_score_max and focus_score < (focus_score_max * 2.2):
-                    # overshooted
-                    # enter fine adjustment mode
-                    focus_score_max = focus_score - focus_score * 0.2
-                    s_coarse = False
-                else:
-                    # pos_str = "<P " + str(0) + ";>"
-                    # write_only(SerialObj, pos_str)
-                    # print("moving to max position")
-                    # s_coarse = False
-                    write_only(SerialObj, "<R 100;>")
-            else:
-                if focus_score < focus_score_max:
-                    print("Moving up slow")
-                    # moving down slow
-                    write_only(SerialObj, "<E 10;>")
-                else:
-                    # focus achieved
-                    print("Focus Achieved")
-                    # s_coarse = True
+                    if retract_flag: # determine which direction based on flag
+                        if zoom_val < 180:
+                            zoom_val += e_kp
+                        if zoom_val >= 180:
+                            zoom_val = 180
+                    if extend_flag:
+                        if zoom_val > 0:
+                            zoom_val -= e_kp
+                        if zoom_val <= 0:
+                            zoom_val = 0
+                    motor_command('Z', zoom_val)
+                else: # hold zoom and save values
+                    focus_score_max = focus_score
+                    hold_zoom = True
+                    print("Focus achieved!")
+            if focus_timer > 2:
+                focus_wait = False
         else:
             fc_sum += fc_temp
             data_counter += 1
@@ -135,17 +145,42 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
         # display frame
         frame = cv2.resize(frame, (960, 540))
         cv2.imshow('Microscope Autofocusing', frame)
-
+        
         usr_key = cv2.waitKey(1)
-        if usr_key == ord('q'):
-            break  
+        match usr_key:
+            case ord('q'):
+                break
+            case ord('p'):
+                new_pos = input("Input position: ")
+                # create command for position
+                if new_pos.isnumeric():
+                    new_pos = int(new_pos)
+                else:
+                    new_pos = 635
+                potval = int(motor_command('G', 0))
+                # print(new_pos)
+                motor_command('P', new_pos)
+                # determine whether extending or retracting
+                if new_pos > potval:
+                    extend_flag = True
+                    retract_flag = False
+                elif new_pos < potval:
+                    extend_flag = False
+                    retract_flag = True
+                else: 
+                    extend_flag = False
+                    retract_flag = False
+
+                focus_score_max = 100
+                hold_zoom = False
+                focus_wait = True
+                focus_timer = 0
+            case _:
+                continue
 
     cap.release()
     cv2.destroyAllWindows()
-    write_only(SerialObj, "<P 630;>") 
-
-        
-
+    motor_command('P', 635)
 
 if __name__ == '__main__':
     SerialObj = arduino_connect()
