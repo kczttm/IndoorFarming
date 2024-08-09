@@ -50,10 +50,10 @@ def write_only(SerialObj, input):
     SerialObj.write(bytes(input, 'utf-8'))
 
 # construct a command in expected format
-def motor_command(txt, val):
+def motor_command(SerialObj, txt, val):
     str_val = str(val)
     cmd = '<' + txt + ' ' + str_val + ';>'
-    data = write_read(cmd)
+    data = write_read(SerialObj, cmd)
     return data
 
 
@@ -111,7 +111,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
 
             # Microscope zoom focus decision tree
             focus_timer += 1
-            potval = motor_command('G', 0)
+            potval = motor_command(SerialObj, 'G', 0)
             if not hold_zoom and not focus_wait:
                 zoom_e = focus_score_max - focus_score
                 # print(zoom_e)
@@ -131,7 +131,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
                             zoom_val -= e_kp
                         if zoom_val <= 0:
                             zoom_val = 0
-                    motor_command('Z', zoom_val)
+                    motor_command(SerialObj, 'Z', zoom_val)
                 else: # hold zoom and save values
                     focus_score_max = focus_score
                     hold_zoom = True
@@ -157,9 +157,9 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
                     new_pos = int(new_pos)
                 else:
                     new_pos = 635
-                potval = int(motor_command('G', 0))
+                potval = int(motor_command(SerialObj, 'G', 0))
                 # print(new_pos)
-                motor_command('P', new_pos)
+                motor_command(SerialObj, 'P', new_pos)
                 # determine whether extending or retracting
                 if new_pos > potval:
                     extend_flag = True
@@ -180,7 +180,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
 
     cap.release()
     cv2.destroyAllWindows()
-    motor_command('P', 635)
+    motor_command(SerialObj, 'P', 635)
 
 if __name__ == '__main__':
     SerialObj = arduino_connect()
