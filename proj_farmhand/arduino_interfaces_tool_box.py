@@ -65,11 +65,13 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
     focus_score_max = 100 # for 200 by 200 crop area
     fc_temp = 0
     fc_sum = 0
+    focus_timer = 0
 
     # focus flags
     hold_zoom = False
     extend_flag = False
     retract_flag = True
+    focus_wait = False
 
     # open camera
     cap = cv2.VideoCapture(cam_id, cv2.CAP_V4L2)
@@ -114,7 +116,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
             potval = motor_command(SerialObj, 'G', 0)
             if not hold_zoom and not focus_wait:
                 zoom_e = focus_score_max - focus_score
-                # print(zoom_e)
+                # print(zoom_e)case 
                 if zoom_e < 0:
                     zoom_e = 0
                 kp = 1 / 40 # max zoom val (180 deg) / max variance val (in the thousands)
@@ -147,36 +149,33 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
         cv2.imshow('Microscope Autofocusing', frame)
         
         usr_key = cv2.waitKey(1)
-        match usr_key:
-            case ord('q'):
-                break
-            case ord('p'):
-                new_pos = input("Input position: ")
-                # create command for position
-                if new_pos.isnumeric():
-                    new_pos = int(new_pos)
-                else:
-                    new_pos = 635
-                potval = int(motor_command(SerialObj, 'G', 0))
-                # print(new_pos)
-                motor_command(SerialObj, 'P', new_pos)
-                # determine whether extending or retracting
-                if new_pos > potval:
-                    extend_flag = True
-                    retract_flag = False
-                elif new_pos < potval:
-                    extend_flag = False
-                    retract_flag = True
-                else: 
-                    extend_flag = False
-                    retract_flag = False
+        if usr_key == ord('q'):
+            break
+        if usr_key == ord('p'):
+            new_pos = input("Input position: ")
+            # create command for position
+            if new_pos.isnumeric():
+                new_pos = int(new_pos)
+            else:
+                new_pos = 635
+            potval = int(motor_command(SerialObj, 'G', 0))
+            # print(new_pos)
+            motor_command(SerialObj, 'P', new_pos)
+            # determine whether extending or retracting
+            if new_pos > potval:
+                extend_flag = True
+                retract_flag = False
+            elif new_pos < potval:
+                extend_flag = False
+                retract_flag = True
+            else: 
+                extend_flag = False
+                retract_flag = False
 
-                focus_score_max = 100
-                hold_zoom = False
-                focus_wait = True
-                focus_timer = 0
-            case _:
-                continue
+            focus_score_max = 100
+            hold_zoom = False
+            focus_wait = True
+            focus_timer = 0
 
     cap.release()
     cv2.destroyAllWindows()
