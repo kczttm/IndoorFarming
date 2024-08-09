@@ -62,7 +62,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
     # declare loop variables
     data_counter = 0
     focus_score = 0
-    focus_score_max = 100 # for 200 by 200 crop area
+    focus_score_max = 50 # real flower threshold: 100 | fake flower threshold: 50 # for 200 by 200 crop
     fc_temp = 0
     fc_sum = 0
     focus_timer = 0
@@ -120,8 +120,8 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
                 # print(zoom_e)case 
                 if zoom_e < 0:
                     zoom_e = 0
-                kp = 1 / 40 # max zoom val (180 deg) / max variance val (in the thousands)
-                e_kp = zoom_e * kp
+                kp = 1 / 20 # max zoom val (180 deg) / max variance val (in the thousands)
+                e_kp = zoom_e * kp # real flower k: 1/40 | fake flower k: 1/20
                 # print(e_kp)
                 if focus_score < focus_score_max:
                     if retract_flag: # determine which direction based on flag
@@ -147,6 +147,11 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
         
         # display frame
         frame = cv2.resize(frame, (960, 540))
+        # Add some text for debugging
+        temp_text1 = 'Z:' + str(zoom_val)
+        temp_text2 = 'P:' + str(int(potval))
+        frame = cv2.putText(frame, temp_text1, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        frame = cv2.putText(frame, temp_text2, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         cv2.imshow('Microscope Autofocusing', frame)
         
         usr_key = cv2.waitKey(1)
