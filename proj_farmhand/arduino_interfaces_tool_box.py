@@ -66,6 +66,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
     fc_temp = 0
     fc_sum = 0
     focus_timer = 0
+    zoom_val = 0
 
     # focus flags
     hold_zoom = False
