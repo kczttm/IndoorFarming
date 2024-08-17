@@ -165,9 +165,9 @@ class RealSenseFlowerPosesActionServer(Node):
                 # rise the robot to take pictures
                 joint_angles = self.init_joint_angles.copy()
                 joint_angles[1] = 0
-                joint_angles[5] = 70
+                joint_angles[5] = 65
                 # move to the initial joint angles
-                # action_result = move_joints(self.base, joint_angles)
+                action_result = move_joints(self.base, joint_angles)
 
                 self._job_active = True
                 # need to test if this is the correct waiting function in async env
@@ -175,7 +175,7 @@ class RealSenseFlowerPosesActionServer(Node):
                 while rclpy.ok() and self._job_active:
                     time.sleep(0.01)
                 
-                # action_result = move_joints(self.base, self.init_joint_angles)
+                action_result = move_joints(self.base, self.init_joint_angles)
 
         except Exception as e:
             self.get_logger().info('An error occurred: ' + str(e))

@@ -28,7 +28,7 @@ def arduino_connect(port='/dev/ttyUSB0'):
     # servo position if Z, number does not matter for G
     ReceivedString = write_read(SerialObj, "<ABC 123;>")
     print(ReceivedString)
-    
+    motor_command(SerialObj, 'P', 635)
     return SerialObj
 
 # autofocus score based on Zaber microscope example
@@ -57,12 +57,19 @@ def motor_command(SerialObj, txt, val):
     return data
 
 
-def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
+def auto_focus(SerialObj, cam_id=4, predefined_pos=60, real_flower=False):
+    if not real_flower:
+        threshold = 40
+        p_gain = 1 / 40
+    else:
+        threshold = 100
+        p_gain = 1 / 120
+    motor_command(SerialObj, 'P', predefined_pos)
     time.sleep(1)
     # declare loop variables
     data_counter = 0
     focus_score = 0
-    focus_score_max = 100 # for 200 by 200 crop area
+    focus_score_max = threshold # for 200 by 200 crop area
     fc_temp = 0
     fc_sum = 0
     focus_timer = 0
@@ -120,7 +127,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
                 # print(zoom_e)case 
                 if zoom_e < 0:
                     zoom_e = 0
-                kp = 1 / 40 # max zoom val (180 deg) / max variance val (in the thousands)
+                kp = p_gain # max zoom val (180 deg) / max variance val (in the thousands)
                 e_kp = zoom_e * kp
                 # print(e_kp)
                 if focus_score < focus_score_max:
@@ -173,7 +180,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
                 extend_flag = False
                 retract_flag = False
 
-            focus_score_max = 100
+            focus_score_max = threshold
             hold_zoom = False
             focus_wait = True
             focus_timer = 0
@@ -185,7 +192,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=0):
 if __name__ == '__main__':
     SerialObj = arduino_connect()
     time.sleep(2)
-    auto_focus(SerialObj)
+    auto_focus(SerialObj,predefined_pos=635)
     # write_only(SerialObj, "<P 0;>")
     # time.sleep(2)
     # write_only(SerialObj, "<Z 180;>")
