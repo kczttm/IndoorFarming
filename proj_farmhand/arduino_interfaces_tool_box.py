@@ -16,6 +16,7 @@ def arduino_connect(port='/dev/ttyUSB0'):
     SerialObj.parity   ='N'    # No parity
     SerialObj.stopbits = 1     # Number of Stop bits = 1
     SerialObj.timeout  = None  # Setting timeouts: None = waits forever
+    clear_buffer(SerialObj)
     time.sleep(3)              # timing for Arduino
 
     # Expected command format: Expected format: "<ABC 123;>"
@@ -26,6 +27,7 @@ def arduino_connect(port='/dev/ttyUSB0'):
     # G - get potentiometer value
     # Number value - time if R/E, lin actuator position if P (min 0 max 635)
     # servo position if Z, number does not matter for G
+
     ReceivedString = write_read(SerialObj, "<ABC 123;>")
     print(ReceivedString)
     motor_command(SerialObj, 'P', 635)
@@ -56,21 +58,28 @@ def motor_command(SerialObj, txt, val):
     data = write_read(SerialObj, cmd)
     return data
 
+def clear_buffer(SerialObj):
+    SerialObj.read_all()
 
-def auto_focus(SerialObj, cam_id=4, predefined_pos=635, real_flower=False):
+
+def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
+               real_flower=False):
     if not real_flower:
         threshold = 40
         p_gain = 1 / 80
     else:
         threshold = 100
         p_gain = 1 / 120
+    
+    t_start = None # time to wait after the focus is achieved
+    t_max = 5 # 5 seconds
 
-    zoom_val = 0
+    zoom_val = predefined_zoom
     motor_command(SerialObj, 'P', predefined_pos)
-    if predefined_pos == 635:
-        motor_command(SerialObj, 'Z', 21)
-        zoom_val = 21
+    motor_command(SerialObj, 'Z', predefined_zoom)
+    
     time.sleep(1)
+    clear_buffer(SerialObj)
     # declare loop variables
     data_counter = 0
     focus_score = 0
@@ -125,9 +134,16 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, real_flower=False):
             fc_sum = 0
             data_counter = 0
 
+            # hold zoom for 5 seconds
+            if t_start is not None:
+                t_end = time.time()
+                if t_end - t_start > t_max:
+                    break
+
             # Microscope zoom focus decision tree
             focus_timer += 1
             potval = motor_command(SerialObj, 'G', 0)
+            # print("Potentiometer Value: ", potval)
             if not hold_zoom and not focus_wait:
                 zoom_e = focus_score_max - focus_score
                 # print(zoom_e)case 
@@ -152,6 +168,8 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, real_flower=False):
                     focus_score_max = focus_score
                     hold_zoom = True
                     print("Focus achieved!")
+                    t_start = time.time()
+
             if focus_timer > 2:
                 focus_wait = False
         else:
@@ -161,12 +179,13 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, real_flower=False):
         # display frame
         # Add some text for debugging
         temp_text1 = 'Z:' + str(int(zoom_val))
-        # temp_text2 = 'P:' 
+        temp_text2 = 'P:' + str(int(potval))
         frame = cv2.putText(frame, temp_text1, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-        # frame = cv2.putText(frame, temp_text2, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        frame = cv2.putText(frame, temp_text2, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         frame = cv2.resize(frame, (960, 540))
         cv2.imshow('Microscope Autofocusing', frame)
         
+
         usr_key = cv2.waitKey(1)
         if usr_key == ord('q'):
             break

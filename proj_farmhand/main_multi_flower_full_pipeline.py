@@ -338,8 +338,8 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
                                                     eps_pos=0.001, eps_ang=0.1,
                                                     dcc_factor=2, ang_dcc_factor=1)
             # print("Velocity: ", v)
-            if REACHED:
-                break
+            # if REACHED:
+            #     break
 
             twist.linear_x = v[0]
             twist.linear_y = v[1]
@@ -491,26 +491,6 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
     print("Move to bottom Pose error: ", p_polli_fork_des_kinova - p_curr_kinova)
 
-    # ################# raise to the center of the flower slowly #################
-    # H_polli_fork_des[0:3, 3] = [p_flower_origin_fork_frame[0], p_flower_origin_fork_frame[1]+fork_raise, extend_z+fork_depth]
-    # H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
-    # H_wd_ee_des, p_polli_fork_des_center_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.01)
-    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_center_kinova)
-    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    # print("Raise to center Pose error: ", p_polli_fork_des_center_kinova - p_curr_kinova)
-
-
-    # ################# rotate +x of the fork frame and move -y #################
-    # H_polli_fork_des = np.eye(4)
-    # H_polli_fork_des[:3,:3] = euler_to_rotation_matrix(np.radians(fork_angle), 0, 0)
-    # H_polli_fork_des[0:3, 3] = [0.0, fork_raise, 0]
-    # H_polli_fork_curr = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
-    # H_wd_polli_fork_des = H_polli_fork_curr @ H_polli_fork_des
-    # H_wd_ee_des, p_polli_fork_des_rotated_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.08)
-    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_rotated_kinova)
-    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    # print("Raise to center Pose error: ", p_polli_fork_des_rotated_kinova - p_curr_kinova)
-
     # micro adjust the robot to the flower
     robot_micro_adjust(serial_obj, REAL_FLOWER=REAL_FLOWER)
 
@@ -520,12 +500,12 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     #     cv2_video_display()
     # except KeyboardInterrupt:
     #     pass
-    auto_focus(serial_obj,predefined_pos=200, real_flower=False)
+    auto_focus(serial_obj,predefined_pos=200, predefined_zoom=40, real_flower=False)
     # input("Press Enter to continue...")
 
     ################# Return to the starting pose #################
     p_kinova_series = [p_polli_fork_des_kinova, p_orient_kinova, p_init_kinova]
-    velocity_series = [0.05, None, None]  # None means default speed
+    velocity_series = [0.03, None, None]  # None means default speed
 
 
     robot_move_kinova_pose_series(p_kinova_series, velocity_series)
