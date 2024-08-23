@@ -238,11 +238,15 @@ def draw_registration_result(source, target, transformation):
     o3d.visualization.draw_geometries([source_temp, target_temp, coordinate_frame])
 
 
-def rotate_frame_on_ball(ball_center, roll, pitch, yaw):
+def rotate_frame_on_ball(ball_center, roll, pitch, yaw, centering=True):
     """
     Rotate a frame on a ball centered at the ball_center 
         with radius equal to the distance from the camera 
         to the flower.
+
+    Note that if centering is True,
+        the H_backward centers the camera at the ball_center
+        so that the rotating frame is tangent to the ball.
 
     ball_center is a (3,) numpy array
     roll, pitch, yaw are in radians
@@ -262,10 +266,12 @@ def rotate_frame_on_ball(ball_center, roll, pitch, yaw):
     H_rotation = np.eye(4)
     H_rotation[0:3, 0:3] = combined_rot
 
-    # H_backward = np.linalg.inv(H_translation)
-    # back up in z direction by ball radius
-    radius = np.linalg.norm(ball_center)
-    H_backward = np.eye(4)
-    H_backward[2, 3] = -radius
+    if not centering:
+        H_backward = np.linalg.inv(H_translation)
+    else:
+        # back up in z direction by ball radius
+        radius = np.linalg.norm(ball_center)
+        H_backward = np.eye(4)
+        H_backward[2, 3] = -radius
 
     return H_translation @ H_rotation @ H_backward

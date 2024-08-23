@@ -19,14 +19,16 @@ from proj_farmhand.ICP_tool_box import preprocess_point_cloud, np_to_o3d_point_c
 from proj_farmhand.ICP_tool_box import execute_global_registration, refine_registration
 from proj_farmhand.ICP_tool_box import rotation_matrix_to_euler, rotate_frame_on_ball
 
-from proj_farmhand.arduino_interfaces_tool_box import arduino_connect, auto_focus
+from proj_farmhand.arduino_interfaces_tool_box import arduino_connect, auto_focus, motor_command
 
 from proj_farmhand.rs_sahi_global_flower_pose_client import main as RealSenseFlowerPosesActionClient
 
+from proj_farmhand.flower_center_tracking import get_flower_center, calc_xy_plane_pose_error
+
 from gen3_7dof.take_pictures_action_client import main as TakePicturesActionClient
 from gen3_7dof.tool_box import get_endoscope_tf_from_yaml, get_polli_fork_tf_from_yaml, tf_to_hom_mtx, H_mtx_to_kinova_pose_in_base
-from gen3_7dof.tool_box import get_realsense_on_link1_HomoMtx, euler_to_rotation_matrix
-from gen3_7dof.tool_box import TCPArguments, move_tool_pose_absolute, get_world_EE_HomoMtx, get_joint_angles, move_joints
+from gen3_7dof.tool_box import get_realsense_on_link1_HomoMtx, euler_to_rotation_matrix, getRotMtx
+from gen3_7dof.tool_box import TCPArguments, move_tool_pose_absolute, get_world_EE_HomoMtx, get_joint_angles, move_joints, move_end_effector_vel
 from gen3_7dof.utilities import DeviceConnection
 
 from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
@@ -215,19 +217,150 @@ def robot_move_kinova_pose_series(p_kinova_series, velocity_series):
     return action_result
 
 
-def cv2_video_display():
-    cap = cv2.VideoCapture(4,cv2.CAP_V4L2)
-    width = 1920
-    height = 1080
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    while True:
-        ret, frame = cap.read()
-        cv2.imshow('frame', frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-    cap.release()
-    cv2.destroyAllWindows()
+def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
+    # auth_radius is the maximum distance the robot could travel to explore.
+    # align the flower to a good pos under the microscope
+    # TODO if there are flowers that are facing downwards too much, hardcode a tilt angle till microscope sees it.
+
+    # adjust the focus of the microscope
+    motor_command(SerialObj, 'P', 635)
+    motor_command(SerialObj, 'Z', 21)
+
+    # create a list of centers and radii of the flowers to serve as a filtered list
+    center_list = []
+    ellipse_rad_list = []
+    list_length = 5
+
+    focal_length = 800 # in pixels, estimated, need to be calibrated
+    desired_z = 0.06 # in meters, desired distance from the flower
+
+    # gain for the pursuit controller
+    kp_pos = 1.0 # need to be tuned, from pixel error to m/s
+    kp_ang = 1.0 # need to be tuned, from propotional error to deg/s
+
+    tcp_args = TCPArguments()
+    with DeviceConnection.createTcpConnection(tcp_args) as router:
+        base = BaseClient(router)
+        base_servo_mode = Base_pb2.ServoingModeInformation()
+        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+        base.SetServoingMode(base_servo_mode)
+        command = Base_pb2.TwistCommand()
+        # note that twist is naturally in tool frame, but this conversion made things a bit easy
+        command.reference_frame = Base_pb2.CARTESIAN_REFERENCE_FRAME_BASE
+        command.duration = 0
+
+        # initialize the twist command
+        twist = command.twist
+        twist.linear_x = 0.0  # adjust linear velocity
+        twist.linear_y = 0.0
+        twist.linear_z = 0.0
+        twist.angular_x = 0.0
+        twist.angular_y = 0.0
+        twist.angular_z = 0.0  # adjust angular velocity
+
+        # initialize the orientation of the end effector
+        R_d = getRotMtx(base.GetMeasuredCartesianPose())
+
+        R_ee_micro = euler_to_rotation_matrix(-np.radians(90), 0, np.radians(180))
+        EE_polli_fork_tf = get_polli_fork_tf_from_yaml()
+        H_ee_fork = tf_to_hom_mtx(EE_polli_fork_tf)
+
+        cap = cv2.VideoCapture(4,cv2.CAP_V4L2)
+        width = 1920
+        height = 1080
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+        REACHED = False
+
+        while True:
+            ret, frame = cap.read()
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            # fit the flower center with an ellipse
+            center, radius_list, frame = get_flower_center(frame, debug=False, show=True, REAL_FLOWER=REAL_FLOWER)
+            
+            H_wd_ee = get_world_EE_HomoMtx(base)
+            R_wd_micro = H_wd_ee[:3,:3] @ R_ee_micro
+
+            pix_error_micro, ang_error = calc_xy_plane_pose_error(center, radius_list)
+            
+            # print("Pix Error: ", pix_error_micro, "Ang Error: ", np.degrees(ang_error))
+
+            flower_centered = np.linalg.norm(pix_error_micro[0:2]) < 250
+
+            ang_error_for_Rot = 0 # no rotation for now
+            # case: if the flower has rotated to almost upright
+            if ang_error < np.radians(15):
+                # ang_error_for_Rot = ang_error # correcting small angle error
+                ang_error = 0
+                # print("Small Angle Error: ", np.degrees(ang_error_for_Rot))
+                if flower_centered:
+                    REACHED = True
+            
+            # case: if the flower is not too far away from center
+            if flower_centered: 
+                pix_error_micro = np.zeros(3)
+                # convert angle error to the micro +z error: map (0~90)*kp_ang to pixel error
+                pix_error_micro[2] = -np.degrees(ang_error) * kp_ang
+
+            print("area: ", radius_list[0]*radius_list[1])
+            # case: if the flower center has not been detected
+            if radius_list[0]*radius_list[1] < 10000:
+                pix_error_micro = np.zeros(3)
+                pix_error_micro[2] = -10 # move the fork up slowly
+            
+
+            pix_error_wd = R_wd_micro @ pix_error_micro * kp_pos
+            pos_error_wd = pix_error_wd / focal_length * desired_z
+            print("Position Error: ", pos_error_wd, "Angle Error: ", np.degrees(ang_error)*kp_ang)
+
+            p_ee_fork = H_ee_fork[:3,3]
+
+            # note that we are rotating around the fork center around the -x axis of the 
+            # end effector frame
+            H_wd_fork = H_wd_ee @ H_ee_fork
+            H_error_fork_fork_des = rotate_frame_on_ball(p_ee_fork, -ang_error_for_Rot, 0, 0, centering=False)
+            # print(H_error_fork_fork_des)
+            H_error_wd_fork_des = H_wd_fork @ H_error_fork_fork_des
+
+            # composing error rotation matrix from ang_error
+            R_d_ee = (H_error_wd_fork_des @ np.linalg.inv(H_ee_fork))[:3,:3]
+            ER_wd = H_wd_ee[:3,:3] @ R_d_ee.T
+
+            # pos error in ee frame from rotating the fork
+            pos_rot_error_wd = H_error_wd_fork_des[:3,3] - H_wd_fork[:3,3]
+            # combining the displacement from both the position and the rotation
+            pos_diff_wd = pos_error_wd + pos_rot_error_wd
+            # print(pos_diff_wd)
+            stopping, v, w = move_end_effector_vel(base, pos_diff_wd, ER_wd,
+                                                    max_vel=0.008, max_w=0.5,
+                                                    kp_pos=2.5, kp_ang=2.0,
+                                                    eps_pos=0.001, eps_ang=0.1,
+                                                    dcc_factor=2, ang_dcc_factor=1)
+            # print("Velocity: ", v)
+            if REACHED:
+                break
+
+            twist.linear_x = v[0]
+            twist.linear_y = v[1]
+            twist.linear_z = v[2]
+            twist.angular_x = w[0]
+            twist.angular_y = w[1]
+            twist.angular_z = w[2]
+            base.SendTwistCommand(command)
+            # center_list.append(center)
+            # ellipse_rad_list.append(radius_list)
+            # if len(center_list) > list_length:
+                # center_list.pop(0)
+                # ellipse_rad_list.pop(0)
+
+            frame_rs = cv2.resize(frame.copy(), (540,960))
+            cv2.imshow('frame', frame_rs)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            
+        cap.release()
+        cv2.destroyAllWindows()
 
 
 def opt_ee_y_tilt(flower_point, all_flower_points, H_wd_rs, max_tilt=np.pi/6):
@@ -325,16 +458,13 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
 
     ################# Get to the bottom of the flower slowly #################
     ## Get the bottom of the flower pose in the fork frame after reorienting
+
     if REAL_FLOWER:
         fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
         fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
-        fork_raise = -0.001 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
-        fork_angle = 5.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
     else:
-        fork_depth = 0.002  # the depth of the fork in the flower (0.007 mm) z is pointing out
+        fork_depth = 0.003  # the depth of the fork in the flower (0.007 mm) z is pointing out
         fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
-        fork_raise = -0.007 # the raise of the fork from the center of the flower (-0.002 mm) y is pointing down
-        fork_angle = 8.0 # the angle of the fork from the center of the flower (5 degrees) x is pointing to the right
 
     # map the post-yolo endoscope frame to the post-reorienting polli_fork frame
     H_wd_polli_fork_init = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
@@ -350,7 +480,9 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
 
     # print(bottom_y, bottom_z, p_flower_origin_fork_frame)
     extend_z = max(bottom_z, p_flower_origin_fork_frame[2])
-    
+
+    # if bottom_z > p_flower_origin_fork_frame[2]: # if the flower is facing down
+
     H_polli_fork_des = np.eye(4)
     H_polli_fork_des[0:3, 3] = [p_flower_origin_fork_frame[0], bottom_y+fork_lower, extend_z+fork_depth]
     H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
@@ -359,26 +491,29 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
     print("Move to bottom Pose error: ", p_polli_fork_des_kinova - p_curr_kinova)
 
+    # ################# raise to the center of the flower slowly #################
+    # H_polli_fork_des[0:3, 3] = [p_flower_origin_fork_frame[0], p_flower_origin_fork_frame[1]+fork_raise, extend_z+fork_depth]
+    # H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
+    # H_wd_ee_des, p_polli_fork_des_center_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.01)
+    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_center_kinova)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # print("Raise to center Pose error: ", p_polli_fork_des_center_kinova - p_curr_kinova)
 
-    ################# raise to the center of the flower slowly #################
-    H_polli_fork_des[0:3, 3] = [p_flower_origin_fork_frame[0], p_flower_origin_fork_frame[1]+fork_raise, extend_z+fork_depth]
-    H_wd_polli_fork_des = H_wd_polli_fork_init @ H_polli_fork_des
-    H_wd_ee_des, p_polli_fork_des_center_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.01)
-    print("Desired Polli Fork Pose: \n", p_polli_fork_des_center_kinova)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Raise to center Pose error: ", p_polli_fork_des_center_kinova - p_curr_kinova)
 
+    # ################# rotate +x of the fork frame and move -y #################
+    # H_polli_fork_des = np.eye(4)
+    # H_polli_fork_des[:3,:3] = euler_to_rotation_matrix(np.radians(fork_angle), 0, 0)
+    # H_polli_fork_des[0:3, 3] = [0.0, fork_raise, 0]
+    # H_polli_fork_curr = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
+    # H_wd_polli_fork_des = H_polli_fork_curr @ H_polli_fork_des
+    # H_wd_ee_des, p_polli_fork_des_rotated_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.08)
+    # print("Desired Polli Fork Pose: \n", p_polli_fork_des_rotated_kinova)
+    # H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    # print("Raise to center Pose error: ", p_polli_fork_des_rotated_kinova - p_curr_kinova)
 
-    ################# rotate +x of the fork frame and move -y #################
-    H_polli_fork_des = np.eye(4)
-    H_polli_fork_des[:3,:3] = euler_to_rotation_matrix(np.radians(fork_angle), 0, 0)
-    H_polli_fork_des[0:3, 3] = [0.0, fork_raise, 0]
-    H_polli_fork_curr = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
-    H_wd_polli_fork_des = H_polli_fork_curr @ H_polli_fork_des
-    H_wd_ee_des, p_polli_fork_des_rotated_kinova = robot_move_in_polli_fork_frame_absolute(H_wd_polli_fork_des, speed=0.08)
-    print("Desired Polli Fork Pose: \n", p_polli_fork_des_rotated_kinova)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Raise to center Pose error: ", p_polli_fork_des_rotated_kinova - p_curr_kinova)
+    # micro adjust the robot to the flower
+    robot_micro_adjust(serial_obj, REAL_FLOWER=REAL_FLOWER)
+
 
     ################# Keep moving slowly based on the vibration #################
     # try:
@@ -398,7 +533,9 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
 
 def main():
     SerialObj = arduino_connect()
-    # first raise robot's third joint to take pictures
+    # robot_micro_adjust(SerialObj, REAL_FLOWER=False)
+    ##first raise robot's third joint to take pictures
+
     flower_poses_wd, joint_angles_init, H_wd_rs = realsense_get_flower_poses(sahi_n_slices = 2)
     print(flower_poses_wd)
     if flower_poses_wd is None:
