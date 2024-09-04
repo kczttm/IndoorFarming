@@ -142,8 +142,8 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
             # hold zoom for 5 seconds
             if t_start is not None:
                 t_end = time.time()
-                if t_end - t_start > t_max:
-                    break
+                # if t_end - t_start > t_max:
+                #     break
 
             # Microscope zoom focus decision tree
             focus_timer += 1

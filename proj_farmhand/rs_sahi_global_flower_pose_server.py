@@ -6,6 +6,8 @@ import cv2
 # Get the absolute path of the current script
 repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
 # sys.path.append(repo_root)
+exp_data_dir = os.path.join(repo_root, "ExperimentData")
+
 from proj_farmhand.RS_tool_box import detect_sahi, draw_sahi_boxes
 
 import rclpy
@@ -124,8 +126,12 @@ class RealSenseFlowerPosesActionServer(Node):
             # print(flower_centers_in_cam_frame)
             self.selected_flower_poses = flower_centers_in_world_frame
             self._current_goal.publish_feedback(RealSenseFlowerPoses.Feedback(status='Flower data collected'))
+            # obtain the image name string if exists
+            rs_storage_path = os.path.join(exp_data_dir, "rs_img_name_str.npy")
+            if os.path.exists(rs_storage_path):
+                img_name_str = np.load(rs_storage_path)
+                cv2.imwrite(img_name_str, annotated_image)
 
-        
 
 
     def depth_callback(self, msg):

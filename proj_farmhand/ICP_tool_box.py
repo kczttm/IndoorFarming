@@ -238,6 +238,27 @@ def draw_registration_result(source, target, transformation):
     o3d.visualization.draw_geometries([source_temp, target_temp, coordinate_frame])
 
 
+def save_registration_result(source, target, transformation, output_file_path):
+    
+    source_temp = copy.deepcopy(source)
+    target_temp = copy.deepcopy(target)
+    source_temp.paint_uniform_color([1, 0, 0])
+    target_temp.paint_uniform_color([0, 1, 0])
+
+    source_temp.transform(transformation)
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+
+    vis.add_geometry(source_temp)
+    vis.add_geometry(target_temp)
+
+    vis.get_view_control().rotate(10.0, 0.0)
+    vis.poll_events()
+    vis.update_renderer()
+    vis.capture_screen_image(output_file_path)
+    vis.destroy_window()
+
+
 def rotate_frame_on_ball(ball_center, roll, pitch, yaw, centering=True):
     """
     Rotate a frame on a ball centered at the ball_center 
