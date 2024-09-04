@@ -186,7 +186,8 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
         temp_text1 = 'Z:' + str(int(zoom_val))
         temp_text2 = 'P:' + str(int(potval))
         temp_text3 = 'Score:' + str(focus_score)
-        score_file.write(temp_text1 + temp_text2 + temp_text3 + '\n\r')
+        if score_file is not None and not score_file.closed:
+            score_file.write(temp_text1 + temp_text2 + temp_text3 + '\n\r')
         frame = cv2.putText(frame, temp_text1, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         frame = cv2.putText(frame, temp_text2, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         frame = cv2.putText(frame, temp_text3, (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
