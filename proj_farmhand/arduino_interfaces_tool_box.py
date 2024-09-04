@@ -90,6 +90,11 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
     
     potval = predefined_pos
 
+    # for recording purposes
+    record = False 
+    vid_cap = None
+    score_file = None
+
     # focus flags
     hold_zoom = False
     extend_flag = False
@@ -180,8 +185,11 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
         # Add some text for debugging
         temp_text1 = 'Z:' + str(int(zoom_val))
         temp_text2 = 'P:' + str(int(potval))
+        temp_text3 = 'Score:' + str(focus_score)
+        score_file.write(temp_text1 + temp_text2 + temp_text3 + '\n\r')
         frame = cv2.putText(frame, temp_text1, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         frame = cv2.putText(frame, temp_text2, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        frame = cv2.putText(frame, temp_text3, (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         frame = cv2.resize(frame, (960, 540))
         cv2.imshow('Microscope Autofocusing', frame)
         
@@ -214,8 +222,23 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
             hold_zoom = False
             focus_wait = True
             focus_timer = 0
+        if usr_key == ord('r'): # Disable and enable screen recording
+            if record:
+                record = False
+                print("Recording disabled!")
+                vid_cap.release()
+                score_file.close()
+            else:
+                print("Recording enabled!")
+                vid_cap = cv2.VideoWriter('capture.mp4', cv2.VideoWriter_fourcc(*'MP4V'), 10, (1920, 1080))
+                score_file = open("focus_score_log.txt", "w")
+                record = True
 
     cap.release()
+    if vid_cap is not None and vid_cap.isOpened():
+        vid_cap.release()
+    if score_file is not None:
+        score_file.close()
     cv2.destroyAllWindows()
     motor_command(SerialObj, 'P', 635)
 
