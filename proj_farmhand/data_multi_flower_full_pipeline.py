@@ -96,6 +96,7 @@ def save_data():
             flower_contact_success,
             rs_img_name, endo_img_name, registration_img_name, microscope_img_name]
     write_data_to_csv(data_path + "/data.csv", data)
+    print("Saved: \n", "run_id: ", run_id, "flower_id: ", flower_id)
 
 def robot_move_to_flower(percent_frame_height = 0.9):
     YoloPursuitActionClient(percent_frame_height=percent_frame_height)
@@ -301,7 +302,6 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
     global run_id, flower_id
     global flower_contact_success, microscope_img_name
 
-    # TODO start working here and later decide when to hit the save data button.
 
     run_id_str = str(run_id).zfill(3)
     flower_id_str = str(flower_id).zfill(2)
@@ -440,11 +440,20 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
 
             frame_rs = cv2.resize(frame.copy(), (540,960))
             cv2.imshow('frame', frame_rs)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1)
+
+            if key == ord('q'):
+                flower_contact_success = False
                 break
-            
+            if key == ord('s'):
+                flower_contact_success = True
+                break
+        microscope_img_name = "microscope_run_" + run_id_str +"_flower_num_" + flower_id_str + ".png"
+        cv2.imwrite(microscope_img_path + microscope_img_name, frame_rs)
         cap.release()
         cv2.destroyAllWindows()
+
+
 
 
 def opt_ee_y_tilt(flower_point, all_flower_points, H_wd_rs, max_tilt=np.pi/6):
@@ -687,6 +696,7 @@ def main():
                                       _lambda = 0.8,
                                       serial_obj=SerialObj,
                                       euler_x=tilt_angle)
+        save_data() # save all the data in the global variables to the csv file
         
     # move back to the initial pose
     tcp_args = TCPArguments()
