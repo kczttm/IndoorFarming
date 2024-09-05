@@ -54,6 +54,7 @@ setup(
             'rs_sahi_global_flower_pose_server = proj_farmhand.rs_sahi_global_flower_pose_server:main',
             'rs_sahi_global_flower_pose_client = proj_farmhand.rs_sahi_global_flower_pose_client:main',
             'main_multi_flower_pipeline = proj_farmhand.main_multi_flower_full_pipeline:main',
+            'data_collection_main = proj_farmhand.data_multi_flower_full_pipeline:main',
         ],
     },
 )

@@ -6,8 +6,10 @@ import numpy as np
 import time
 
 script_dir = os.path.dirname(__file__)
-repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
-print(repo_root)
+repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), 
+                                         os.pardir, os.pardir, os.pardir, os.pardir,
+                                         "src", "proj_farmhand")) # ensure that it's not in build
+# print(repo_root)
 # sys.path.append(repo_root)
 
 from Strawberry_Plant_Detection.detect import detect_boxes_only
@@ -16,7 +18,7 @@ from proj_farmhand.yolo_pursuit_action_client import main as YoloPursuitActionCl
 from proj_farmhand.RAFT_tool_box import load_model, inference, display_flow
 from proj_farmhand.RAFT_tool_box import get_largest_flower_box, filter_flow, gen_3d_points
 
-from proj_farmhand.ICP_tool_box import get_flower_template_pcd, draw_registration_result, 
+from proj_farmhand.ICP_tool_box import get_flower_template_pcd, draw_registration_result
 from proj_farmhand.ICP_tool_box import save_registration_result, rotate_pcd_htm
 from proj_farmhand.ICP_tool_box import preprocess_point_cloud, np_to_o3d_point_cloud
 from proj_farmhand.ICP_tool_box import execute_global_registration, refine_registration
@@ -51,6 +53,7 @@ rs_img_path = os.path.join(data_path, "01_rs_images/")
 endo_img_path = os.path.join(data_path, "02_endo_images/")
 registration_img_path = os.path.join(data_path, "03_registration_images/")
 microscope_img_path = os.path.join(data_path, "04_microscope_images/")
+print("made path")
 os.makedirs(data_path, exist_ok=True)
 os.makedirs(rs_img_path, exist_ok=True)
 os.makedirs(endo_img_path, exist_ok=True)
@@ -133,7 +136,7 @@ def realsense_get_flower_poses(sahi_n_slices = 2):
 
 def robot_pose_estimation(visualize=False, real_flower=False):
     global run_id, flower_id
-    global endo_image_name
+    global endo_img_name
     global RANSAC_ICP_runtime, RANSAC_ICP_inlier_rmse
 
     run_id_str = str(run_id).zfill(3)
@@ -143,12 +146,12 @@ def robot_pose_estimation(visualize=False, real_flower=False):
     pic_spacing = 0.005
 
     frame1, frame2 = robot_take_pictures(spacing=pic_spacing)
-    endo_image_name = "endo_image_1_of_run_" + run_id_str + "_flower_" + flower_id_str + ".png"
-    endo_image_name_2 = "endo_image_2_of_run_" + run_id_str + "_flower_" + flower_id_str + ".png" 
+    endo_img_name = "endo_image_1_of_run_" + run_id_str + "_flower_" + flower_id_str + ".png"
+    endo_img_name_2 = "endo_image_2_of_run_" + run_id_str + "_flower_" + flower_id_str + ".png" 
 
     #------------- save the images ---------------------
-    cv2.imwrite(endo_img_path + endo_image_name, frame1)
-    cv2.imwrite(endo_img_path + endo_image_name_2, frame2)
+    cv2.imwrite(endo_img_path + endo_img_name, frame1)
+    cv2.imwrite(endo_img_path + endo_img_name_2, frame2)
 
     flow_iters = inference(RAFT_model, frame1, frame2, iters=50, test_mode=False) 
     final_flow = flow_iters[-1]
@@ -477,7 +480,7 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     # if it is None, the robot will move to the nearest flower in endoscope frame
     global run_id, flower_id # these are filled in main()
     global n_flowers, n_detected, rs_flower_poses, rs_img_name # these are filled in main()
-    global endo_image_name, RANSAC_ICP_runtime, RANSAC_ICP_inlier_rmse # these are filled in robot_pose_estimation()
+    global endo_img_name, RANSAC_ICP_runtime, RANSAC_ICP_inlier_rmse # these are filled in robot_pose_estimation()
     global endo_flower_poses, yolo_pursuit_success
     global flower_approach_success, registration_img_name
     global flower_contact_success, microscope_img_name # these are filled in robot_micro_adjust()
@@ -639,17 +642,18 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
 
 
 def main():
-    global run_id, flower_id, n_flowers, n_detected, 
+    global run_id, flower_id, n_flowers, n_detected
     global rs_flower_poses, rs_img_name
 
     # write header if the file does not exist
+    print("data_path: ", data_path)
     #----------------- Update the run_id -------------------
     if not os.path.exists(data_path + "/data.csv"):
         write_data_to_csv(header)
         run_id = 1  # assume first run if the file does not exist
         np.save(os.path.join(exp_data_dir, "run_id.npy"), run_id)
     else:
-        run_id = np.load(os.path.join(exp_data_dir, "run_id.npy"))
+        run_id = int(np.load(os.path.join(exp_data_dir, "run_id.npy")))
         run_id += 1
         np.save(os.path.join(exp_data_dir, "run_id.npy"), run_id)
 
