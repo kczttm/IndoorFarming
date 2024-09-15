@@ -4,7 +4,9 @@ import time
 import cv2
 
 # Get the absolute path of the current script
-repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), os.pardir, os.pardir))
+repo_root = os.path.abspath(os.path.join(os.path.abspath(__file__), 
+                                         os.pardir, os.pardir, os.pardir, os.pardir,
+                                         "src", "proj_farmhand")) # ensure that it's not in build
 # sys.path.append(repo_root)
 exp_data_dir = os.path.join(repo_root, "ExperimentData")
 
@@ -129,7 +131,8 @@ class RealSenseFlowerPosesActionServer(Node):
             # obtain the image name string if exists
             rs_storage_path = os.path.join(exp_data_dir, "rs_img_name_str.npy")
             if os.path.exists(rs_storage_path):
-                img_name_str = np.load(rs_storage_path)
+                # convert the numpy array to string
+                img_name_str = str(np.load(rs_storage_path, allow_pickle=True))
                 cv2.imwrite(img_name_str, annotated_image)
 
 
