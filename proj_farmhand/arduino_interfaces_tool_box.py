@@ -61,6 +61,46 @@ def motor_command(SerialObj, txt, val):
 def clear_buffer(SerialObj):
     SerialObj.read_all()
 
+def pollen_mark(img, flower_type='fake'):
+    if flower_type == 'fake':
+        hsv_lb_bg = np.uint8([0, 170, 0]) 
+        hsv_ub_bg = np.uint8([45, 255, 255])
+        hsv_lb = np.uint8([0, 0, 154]) 
+        hsv_ub = np.uint8([62, 168, 255])
+    else:
+        print("No HSV bounds set!")
+        return
+
+    fullsize = img
+    resize = cv2.resize(fullsize, (1920,1080), interpolation=cv2.INTER_CUBIC)
+    hsv = cv2.cvtColor(resize, cv2.COLOR_BGR2HSV)
+
+    mask = cv2.inRange(hsv, hsv_lb_bg, hsv_ub_bg)
+    th, mask_ff = cv2.threshold(mask, 220, 255, cv2.THRESH_BINARY_INV)
+    mask_ff = cv2.bitwise_not(mask_ff)
+    h, w = mask_ff.shape[:2]
+    cv2.floodFill(image=mask_ff, mask=None, seedPoint=(0, 0), newVal=255)
+    cv2.floodFill(image=mask_ff, mask=None, seedPoint=(0, h-1), newVal=255)
+    cv2.floodFill(image=mask_ff, mask=None, seedPoint=(w-1, 0), newVal=255)
+    cv2.floodFill(image=mask_ff, mask=None, seedPoint=(w-1, h-1), newVal=255)
+    mask_ff = cv2.bitwise_not(mask_ff)
+    mask_ff = cv2.bitwise_or(mask_ff, mask)
+    
+    masked = cv2.bitwise_and(resize, resize, mask=mask_ff)
+    hsv_masked = cv2.bitwise_and(hsv, hsv, mask=mask_ff)
+
+    pollen_mask = cv2.inRange(hsv_masked, hsv_lb, hsv_ub)
+    pollen_masked = cv2.bitwise_and(masked, masked, mask=pollen_mask)
+    mark = resize.copy()
+    mark[np.where((pollen_masked!=[0,0,0]).all(axis=2))] = [0,0,255]
+
+    cv2.imshow('Masked', masked)
+    cv2.imshow('Pollen Mark', mark)
+
+    gray = cv2.cvtColor(pollen_masked, cv2.COLOR_BGR2GRAY)
+    pixel_count = cv2.countNonZero(gray)
+
+    print("Pollen Pixels:", pixel_count)
 
 def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
                real_flower=False):
@@ -196,9 +236,9 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
         
 
         usr_key = cv2.waitKey(1)
-        if usr_key == ord('q'):
+        if usr_key == ord('q'): # Quits program
             break
-        if usr_key == ord('p'):
+        if usr_key == ord('p'): # Adjust position of microscope
             new_pos = input("Input position: ")
             # create command for position
             if new_pos.isnumeric():
@@ -234,6 +274,10 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
                 vid_cap = cv2.VideoWriter('capture.mp4', cv2.VideoWriter_fourcc(*'MP4V'), 10, (1920, 1080))
                 score_file = open("focus_score_log.txt", "w")
                 record = True
+        if usr_key == ord('v'): # Enable toothbrush motor for 5 seconds (can adjust number)
+            motor_command('V', 5000)
+        if usr_key == ord('m'): # Mark pollen on a fake plant
+            pollen_mark(frame, 'fake')
 
     cap.release()
     if vid_cap is not None and vid_cap.isOpened():
