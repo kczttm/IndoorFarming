@@ -52,9 +52,13 @@ def main(args=None, percent_frame_height = 0.7):
     action_client.send_goal(percent_frame_height)
     rclpy.spin(action_client)
     future = action_client._get_result_future
-    result = future.result().result
+    result = str(future.result().result.result)
     print("Result: ", result)
     action_client.destroy_node()
+    if result == 'Pursuit Finished':
+        return True
+    else:
+        return False
 
 if __name__ == '__main__':
     main()

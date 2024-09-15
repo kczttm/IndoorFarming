@@ -52,6 +52,7 @@ class YoloVisualServoActionServer(Node):
             goal_callback=self.goal_callback)
         self._job_active = False
         self._current_goal = None
+        self._result = None
 
 
         # control constants
@@ -134,6 +135,8 @@ class YoloVisualServoActionServer(Node):
             self._current_goal.publish_feedback(YoloPursuit.Feedback(status='Goal Pose reached'))
             self.base.Stop()
             self._job_active = False
+            self._result.result = 'Pursuit Finished'
+            self._current_goal.succeed()
             # self.destroy_node()
         else: 
             # print the current error
@@ -234,8 +237,9 @@ class YoloVisualServoActionServer(Node):
                     self.get_logger().info('No flower detected for 10 frames. Stopping robot.')
                     self._current_goal.publish_feedback(YoloPursuit.Feedback(status='No flower detected for 10 frames. Stopping robot.'))
                     self.no_flower_count = 0
-                    # self.destroy_node()
-                    # self._job_active = False
+                    self._job_active = False
+                    self._result.result = 'Pursuit Aborted'
+                    self._current_goal.abort()
                     # self._current_goal.abort() #### check this later
 
     def goal_callback(self, goal_request):
@@ -247,7 +251,7 @@ class YoloVisualServoActionServer(Node):
     async def execute_callback(self, goal_handle):
         self._current_goal = goal_handle
         self.get_logger().info('Executing goal...')
-        result = YoloPursuit.Result()
+        self._result = YoloPursuit.Result()
         try:
             with DeviceConnection.createTcpConnection(self.tcp_args) as router:
                 self.base = BaseClient(router)
@@ -289,18 +293,16 @@ class YoloVisualServoActionServer(Node):
                 while rclpy.ok() and self._job_active:
                     time.sleep(0.1)
                 
-                result.result = 'Pursuit Finished'
-                self._current_goal.succeed()
 
         except Exception as e:
             self.get_logger().info('An error occurred: ' + str(e))
             self._job_active = False
             
-            result.result = 'Pursuit Aborted'
+            self._result.result = 'Pursuit Aborted'
             self._current_goal.abort()
         
         self._current_goal = None
-        return result
+        return self._result
 
 
             

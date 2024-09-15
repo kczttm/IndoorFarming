@@ -173,8 +173,8 @@ class RealSenseFlowerPosesActionServer(Node):
 
                 # rise the robot to take pictures
                 joint_angles = self.init_joint_angles.copy()
-                joint_angles[1] = 0
-                joint_angles[5] = 65
+                joint_angles[1] = -20
+                joint_angles[5] = 75
                 # move to the initial joint angles
                 action_result = move_joints(self.base, joint_angles)
 

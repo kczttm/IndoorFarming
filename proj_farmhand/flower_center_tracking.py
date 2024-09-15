@@ -7,6 +7,8 @@ import cv2
 import time
 
 from gen3_7dof.tool_box import getRotMtx, R2rot, euler_to_rotation_matrix
+from proj_farmhand.arduino_interfaces_tool_box import arduino_connect, auto_focus, motor_command, calculate_focus_score
+
 
 storage_pt = np.zeros((10000, 3))
 count = -1
@@ -20,6 +22,11 @@ def get_flower_center(frame, debug=False, show=False, REAL_FLOWER=False):
     if not REAL_FLOWER:
         greenLower = (15, 230, 100)
         greenUpper = (25, 255, 220)
+        area_thresh = 4000
+    else:
+        greenLower = (20, 215, 100)
+        greenUpper = (30, 255, 245)
+        area_thresh = 1000
     mask = cv2.inRange(hsv, greenLower, greenUpper)
     mask = cv2.erode(mask, None, iterations=2)
     mask = cv2.dilate(mask, None, iterations=2)
@@ -36,7 +43,9 @@ def get_flower_center(frame, debug=False, show=False, REAL_FLOWER=False):
 
     if len(cnts) > 0:
         cnt = max(cnts, key=cv2.contourArea)
-        if len(cnt) < 5:
+        # get countour area
+        if cv2.contourArea(cnt) < area_thresh:
+        # if len(cnt) < 25:
             return center, radius_list, frame
         # ((x, y), radius) = cv2.minEnclosingCircle(cnt)
         ellipse = cv2.fitEllipse(cnt)
@@ -45,7 +54,7 @@ def get_flower_center(frame, debug=False, show=False, REAL_FLOWER=False):
         radius_b = ellipse[1][1] / 2
         radius_list = np.sort([radius_a, radius_b])
 
-        if radius_list[0] > 10:
+        if radius_list[0] > 20:
             if show:
                 cv2.ellipse(frame, ellipse, (0, 255, 255), 2)
                 cv2.circle(frame, center, 5, (0, 0, 255), -1)
@@ -55,6 +64,8 @@ def get_flower_center(frame, debug=False, show=False, REAL_FLOWER=False):
                 frame = cv2.putText(frame, temp_text2, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
             # print(hsv[center[1], center[0], :])
             if debug:
+                # circle at the center of the frame
+                cv2.circle(frame, center_xy, 5, (0, 0, 255), -1)
                 count += 1
                 storage_pt[count] = hsv[center[1], center[0], :]
                 if count >= 10:
@@ -96,10 +107,35 @@ def calc_xy_plane_pose_error(flower_center, flower_radii):
 
     return pix_error_micro, ang_error
 
+def calc_xy_plane_focus_error(flower_center, frame):
+    # move the flower center back to top left corner
+    flower_center = (flower_center[0] + frame.shape[1]/2, 
+                    flower_center[1] + frame.shape[0]/2)
+    # h, w = frame.shape[:2]
+    h_des = 500
+    w_des = 500
+    # crop the square image from flower center
+    h_start = int(flower_center[1] - h_des/2)
+    w_start = int(flower_center[0] - w_des/2)
+    h_start = max(0, h_start)
+    w_start = max(0, w_start)
+    h_end = min(h_start+h_des, frame.shape[0])
+    w_end = min(w_start+w_des, frame.shape[1])
+    cent_crop = frame[h_start:h_end, w_start:w_end, :]
+
+    # calculate focus score
+    fc_temp = calculate_focus_score(cent_crop)+1e-3
+
+    # based on the center of the ellipse, robot will move in the xy plane to center the ellipse
+    pix_error_micro = np.array([flower_center[0], flower_center[1], 0])
+    return pix_error_micro, fc_temp, cent_crop
     
 
 
 if __name__ == '__main__':
+    SerialObj = arduino_connect()
+    motor_command(SerialObj, 'P', 635)
+    motor_command(SerialObj, 'Z', 19)
     cap = cv2.VideoCapture(4,cv2.CAP_V4L2)
     width = 1920
     height = 1080
@@ -108,12 +144,17 @@ if __name__ == '__main__':
     while cap.isOpened():
         ret, frame = cap.read()
         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        center, radius_list, frame = get_flower_center(frame, debug=True, show=True)
-        pix_error_micro, ang_error = calc_xy_plane_pose_error(center, radius_list)
-        print('pix_error_micro: ', pix_error_micro, 'ang_error: ', ang_error)
+        frame_raw = frame.copy()
+        center, radius_list, frame_marked = get_flower_center(frame, debug=True, show=True, REAL_FLOWER=True)
+        # pix_error_micro, ang_error = calc_xy_plane_pose_error(center, radius_list)
+        # print('pix_error_micro: ', pix_error_micro, 'ang_error: ', ang_error)
+
+        pix_error_micro, focus_error, center_crop = calc_xy_plane_focus_error(center, frame_raw)
+        print('pix_error_micro: ', pix_error_micro, 'focus_error: ', focus_error)
         print(center)
         frame = cv2.resize(frame, (540, 960))
         cv2.imshow("Frame", frame)
+        cv2.imshow("Center Crop", center_crop)
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break

@@ -62,7 +62,7 @@ os.makedirs(microscope_img_path, exist_ok=True)
 
 # file names string
 dt_string = start_time.strftime("%Y-%m-%d_%H-%M-%S")
-header = ["run_id", "n_flowers", "n_detected", 
+header = ["run_id", "flower_id", "n_flowers", "n_detected", 
           "rs_flower_x", "rs_flower_y", "rs_flower_z",
           "endo_flower_x", "endo_flower_y", "endo_flower_z",
           "yolo_pursuit_success",
@@ -75,8 +75,7 @@ global run_id, flower_id
 global n_flowers, n_detected, rs_flower_poses, endo_flower_poses, yolo_pursuit_success, RANSAC_ICP_runtime, RANSAC_ICP_inlier_rmse
 global flower_approach_success, flower_contact_success, rs_img_name, endo_img_name, registration_img_name, microscope_img_name
 
-skip_rs = False  # skip the realsense part if the data is already collected
-manual_intervention = False  # Togle this True if an bug or robot failed on one of the flowers
+
 # TODO if the robot failed on one flower, maybe store the pose of the entire rs_target into a npy file,
 # so that we can manually adjust the robot to the flower and continue the pipeline instead of restarting the real_sense again
 
@@ -98,11 +97,11 @@ def save_data():
             flower_approach_success,
             flower_contact_success,
             rs_img_name, endo_img_name, registration_img_name, microscope_img_name]
-    write_data_to_csv(data_path + "/data.csv", data)
+    write_data_to_csv(data)
     print("Saved: \n", "run_id: ", run_id, "flower_id: ", flower_id)
 
 def robot_move_to_flower(percent_frame_height = 0.9):
-    YoloPursuitActionClient(percent_frame_height=percent_frame_height)
+    return YoloPursuitActionClient(percent_frame_height=percent_frame_height)
 
 def robot_take_pictures(spacing=0.005):
     pictures = TakePicturesActionClient(spacing=spacing)
@@ -126,7 +125,7 @@ def realsense_get_flower_poses(sahi_n_slices = 2):
             flower_poses_wd = RealSenseFlowerPosesActionClient(sahi_n_slices=sahi_n_slices)
 
             # trim the outliers
-            flower_poses_wd = flower_poses_wd[flower_poses_wd[:,0] < 2]
+            flower_poses_wd = flower_poses_wd[np.linalg.norm(flower_poses_wd, axis=1) < 1.0]
             # sort the flower poses by depth
             flower_poses_wd = flower_poses_wd[flower_poses_wd[:,2].argsort()[::-1]]
         except:
@@ -311,6 +310,7 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
 
     # adjust the focus of the microscope
     motor_command(SerialObj, 'P', 635)
+    time.sleep(0.5)
     motor_command(SerialObj, 'Z', 21)
 
     # create a list of centers and radii of the flowers to serve as a filtered list
@@ -357,6 +357,11 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
         height = 1080
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+        # record the frame into a video
+        record_file_name = "recording_run_" + run_id_str +"_flower_num_" + flower_id_str + ".mp4"
+        rec = cv2.VideoWriter(microscope_img_path + record_file_name,
+                            cv2.VideoWriter_fourcc(*'MP4V'), 10, (height, width))
 
         REACHED = False
 
@@ -443,6 +448,9 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
 
             frame_rs = cv2.resize(frame.copy(), (540,960))
             cv2.imshow('frame', frame_rs)
+
+            # record the frame
+            rec.write(frame)
             key = cv2.waitKey(1)
 
             if key == ord('q'):
@@ -454,12 +462,13 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
         microscope_img_name = "microscope_run_" + run_id_str +"_flower_num_" + flower_id_str + ".png"
         cv2.imwrite(microscope_img_path + microscope_img_name, frame_rs)
         cap.release()
+        rec.release()
         cv2.destroyAllWindows()
 
 
 
 
-def opt_ee_y_tilt(flower_point, all_flower_points, H_wd_rs, max_tilt=np.pi/6):
+def opt_ee_y_tilt(flower_point, all_flower_points, H_wd_rs, max_tilt=np.pi/8):
     ## using all flower points to calculate the mean
     # tilt of the ee should be the angle between the line connecting the flower point and the mean of all flower points in realsense frame
     H_rs_wd = np.linalg.inv(H_wd_rs)
@@ -475,7 +484,7 @@ def opt_ee_y_tilt(flower_point, all_flower_points, H_wd_rs, max_tilt=np.pi/6):
     return -angle_from_neg_y_axis
 
 
-def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=None, euler_x=0):
+def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=None, euler_x=0, zoom_in=True):
     # rs_flower_loc is the location of the flower in the world frame
     # if it is None, the robot will move to the nearest flower in endoscope frame
     global run_id, flower_id # these are filled in main()
@@ -527,19 +536,21 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     print("Initial Pose: \n", p_init_kinova)
 
     ################# Move to the flower #################
-    robot_move_to_flower(percent_frame_height = per_H)
-    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
-    print("Yolo Pursuit Pose: \n", p_curr_kinova)
-    H_wd_endo_yolo = H_wd_ee_curr @ tf_to_hom_mtx(EE_endo_tf)
-
-    #----------check if the yolo pursuit is successful----------
-    decision = input("Is the yolo pursuit successful? (y/n): ") 
-    if decision == 'n':
-        yolo_pursuit_success = False
-        # manually adjust the robot to the flower
+    pursuit_succeeded = robot_move_to_flower(percent_frame_height = per_H)
+    if not pursuit_succeeded:
+        #----------check if the yolo pursuit is successful----------
+        decision = input("Is the yolo pursuit successful? (y/n): ") 
+        if decision == 'n':
+            yolo_pursuit_success = False
+            # manually adjust the robot to the flower
+        else:
+            yolo_pursuit_success = True
     else:
         yolo_pursuit_success = True
     
+    H_wd_ee_curr, p_curr_kinova = get_current_EE_pose()
+    print("Yolo Pursuit Pose: \n", p_curr_kinova)
+    H_wd_endo_yolo = H_wd_ee_curr @ tf_to_hom_mtx(EE_endo_tf)
 
     ################# Align to the flower Stem #################
     H_flower_in_endo, template_pcd, flower_pcd = robot_pose_estimation(visualize = False, real_flower = REAL_FLOWER)
@@ -585,8 +596,8 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
         fork_depth = 0.005  # the depth of the fork in the flower (0.007 mm) z is pointing out
         fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
     else:
-        fork_depth = 0.003  # the depth of the fork in the flower (0.007 mm) z is pointing out
-        fork_lower = 0.001 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
+        fork_depth = 0.001  # the depth of the fork in the flower (0.007 mm) z is pointing out
+        fork_lower = -0.002 # the raise of the fork from the lowest point of the flower (0.001 mm) y is pointing down
 
     # map the post-yolo endoscope frame to the post-reorienting polli_fork frame
     H_wd_polli_fork_init = H_wd_ee_curr @ tf_to_hom_mtx(EE_polli_fork_tf)
@@ -601,7 +612,9 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     p_flower_origin_fork_frame = H_polli_fork_endo_yolo @ H_flower_in_endo[:,3]
 
     # print(bottom_y, bottom_z, p_flower_origin_fork_frame)
+    # pick whichever is larger
     extend_z = max(bottom_z, p_flower_origin_fork_frame[2])
+
 
     # if bottom_z > p_flower_origin_fork_frame[2]: # if the flower is facing down
 
@@ -630,8 +643,11 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     #     cv2_video_display()
     # except KeyboardInterrupt:
     #     pass
-    auto_focus(serial_obj,predefined_pos=200, predefined_zoom=40, real_flower=False)
-    # input("Press Enter to continue...")
+
+    ## not doing auto focus for this pipeline
+    if zoom_in:
+        auto_focus(serial_obj,predefined_pos=200, predefined_zoom=40, real_flower=False)
+
 
     ################# Return to the starting pose #################
     p_kinova_series = [p_polli_fork_des_kinova, p_orient_kinova, p_init_kinova]
@@ -660,6 +676,12 @@ def main():
     SerialObj = arduino_connect()
     # robot_micro_adjust(SerialObj, REAL_FLOWER=False)
     ##first raise robot's third joint to take pictures
+    decision = input("Do you want to skip the realsense detection? (y/n): ")
+    if decision == 'y':
+        skip_rs = True
+    else:
+        skip_rs = False
+    
     if not skip_rs:
         # save the current time string to be used as the current rs_img_name
         # combine the rs_img_path with the current time string
@@ -668,19 +690,30 @@ def main():
 
         # saving the name to be used by the real_sense action client to save the image
         np.save(os.path.join(exp_data_dir, "rs_img_name_str.npy"), rs_img_name)
-        flower_poses_wd, joint_angles_init, H_wd_rs = realsense_get_flower_poses(sahi_n_slices = 2)
+        flower_poses_wd, joint_angles_init, H_wd_rs = realsense_get_flower_poses(sahi_n_slices = 6)
         print(flower_poses_wd)
         
         if flower_poses_wd is None:
+            run_id = int(np.load(os.path.join(exp_data_dir, "run_id.npy")))
+            run_id -= 1
+            np.save(os.path.join(exp_data_dir, "run_id.npy"), run_id)
             return
         else:
             flower_index = 0
             # save the flower poses and flower index in a npy file temporarily in ExperimentData folder
             np.save(os.path.join(exp_data_dir, "flower_poses.npy"), flower_poses_wd)
             np.save(os.path.join(exp_data_dir, "flower_index.npy"), flower_index)
+            np.save(os.path.join(exp_data_dir, "H_wd_rs.npy"), H_wd_rs)
+            np.save(os.path.join(exp_data_dir, "joint_angles_init.npy"), joint_angles_init)
     else:   
+        run_id = int(np.load(os.path.join(exp_data_dir, "run_id.npy")))
+        run_id -= 1
+        np.save(os.path.join(exp_data_dir, "run_id.npy"), run_id)
         flower_poses_wd = np.load(os.path.join(exp_data_dir, "flower_poses.npy"))
         flower_index = np.load(os.path.join(exp_data_dir, "flower_index.npy"))
+        H_wd_rs = np.load(os.path.join(exp_data_dir, "H_wd_rs.npy"))
+        rs_img_name = np.load(os.path.join(exp_data_dir, "rs_img_name_str.npy"))
+        joint_angles_init = np.load(os.path.join(exp_data_dir, "joint_angles_init.npy"))
     
     #----------- Logging the number of flower and the number of flowers detected ------------------
     n_detected = len(flower_poses_wd)
@@ -699,7 +732,8 @@ def main():
         robot_pollinate_single_flower(rs_flower_loc=flower_poses_wd[i], 
                                       _lambda = 0.8,
                                       serial_obj=SerialObj,
-                                      euler_x=tilt_angle)
+                                      euler_x=tilt_angle,
+                                      zoom_in=False)
         save_data() # save all the data in the global variables to the csv file
         
     # move back to the initial pose

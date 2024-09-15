@@ -18,9 +18,9 @@ from proj_farmhand.RAFT_tool_box import get_largest_flower_box, filter_flow, gen
 from proj_farmhand.ICP_tool_box import get_flower_template_pcd, draw_registration_result
 from proj_farmhand.ICP_tool_box import preprocess_point_cloud, np_to_o3d_point_cloud
 from proj_farmhand.ICP_tool_box import execute_global_registration, refine_registration
+from proj_farmhand.ICP_tool_box import save_registration_result
 
-
-DEBUG = True  # use images from the repo instead of taking pictures
+DEBUG = False  # use images from the repo instead of taking pictures
 
 def take_pictures(spacing=0.005):
     pictures = TakePicturesActionClient(spacing=spacing)
@@ -39,13 +39,14 @@ def main():
         # save the images
         # cv2.imwrite("frame1_low_light.png", frame1)
         # cv2.imwrite("frame2_low_light.png", frame2)
+    real_flower = True
 
     flow_iters = inference(RAFT_model, frame1, frame2, iters=50, test_mode=False) 
     final_flow = flow_iters[-1]
-    display_flow(final_flow)
+    # display_flow(final_flow)
     boxes = detect_boxes_only(frame1, confidence=0.7)
     flower_box = get_largest_flower_box(boxes)
-    flow_x, flow_y, kept_idx = filter_flow(final_flow, flower_box, visualize=True)
+    flow_x, flow_y, kept_idx = filter_flow(final_flow, flower_box, visualize=False)
 
     # obtain 3D points
     x_p, y_p, z_p = gen_3d_points(flow_x, flow_y, kept_idx)
@@ -54,7 +55,8 @@ def main():
     print("Remaining target flower Points Shape: ", target_flower_3d_points.shape)
 
     target_flower_pcd = np_to_o3d_point_cloud(target_flower_3d_points)
-    template_flower_pcd = get_flower_template_pcd(visualize=False)
+    template_flower_pcd = get_flower_template_pcd(visualize=False, real_flower=real_flower)
+    
 
     # Preprocess the point clouds
     voxel_size = 0.001
@@ -63,11 +65,29 @@ def main():
 
     # RANSAC based registration
     result_ransac = execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
-    draw_registration_result(source_down, target_down, result_ransac.transformation)
+    # draw_registration_result(source_down, target_down, result_ransac.transformation)
 
     # Refine with ICP
     result_ICP = refine_registration(source_down, target_down, result_ransac.transformation, voxel_size)
-    print("ICP Inlier_rmse: ", result_ICP.inlier_rmse)
+
+    if real_flower:
+        max_mse = 0.00088
+    else:
+        max_mse = 0.00087
+
+    max_try = 200
+    count = 0
+    best_result = result_ICP
+    while result_ICP.inlier_rmse > max_mse and count < max_try:
+        result_ransac = execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+        result_ICP = refine_registration(source_down, target_down, result_ransac.transformation, voxel_size)
+        if result_ICP.inlier_rmse < best_result.inlier_rmse:
+            best_result = result_ICP
+        count += 1
+    
+    print("Total ICP Iterations: ", count)
+    print("Best ICP Inlier_rmse: ", best_result.inlier_rmse)
+    result_ICP = best_result
 
     draw_registration_result(source_down, target_down, result_ICP.transformation)
 

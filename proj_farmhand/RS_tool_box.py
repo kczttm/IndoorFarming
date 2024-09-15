@@ -17,7 +17,7 @@ sahi_detection_model = AutoDetectionModel.from_pretrained(
     model_type="yolov8",
     model_path=repo_root+"/Strawberry_Plant_Detection/runs/detect/train9/weights/best.pt",
     device=device,
-    confidence_threshold=0.5,
+    confidence_threshold=0.55,
 )
 
 
@@ -50,6 +50,10 @@ def draw_sahi_boxes(frame, pred_list, depth_img, CameraInfo, H_wd_rs=None):
     # if H_wd_rs is not None:
     # output flower centers in world frame
     # otherwise, output flower centers in camera frame
+    
+    # filter out large bbox
+    # pred_list = [pred for pred in pred_list if pred.bbox.area < 0.1]
+    max_box_area = 5000 # very tentative value
 
     color=(0, 255, 0)
     # rect_th=max(round(sum(frame.shape) / 2 * 0.003), 2)
@@ -68,8 +72,9 @@ def draw_sahi_boxes(frame, pred_list, depth_img, CameraInfo, H_wd_rs=None):
         object_prediction = object_prediction.deepcopy()
 
         bbox = object_prediction.bbox.to_xyxy()
+        area = object_prediction.bbox.area
         category_name = object_prediction.category.name
-        if category_name != "flower":
+        if category_name != "flower" or area > max_box_area:
             continue
         score = object_prediction.score.value
 

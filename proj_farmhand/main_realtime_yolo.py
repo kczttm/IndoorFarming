@@ -33,7 +33,10 @@ if USE_ROS:
             # annotated_image, boxes, num_flowers, num_stamen = detect(frame)
             annotated_image, boxes = track(frame)
             # make frame twice as large
-            annotated_image = cv2.resize(annotated_image, (annotated_image.shape[1]*2, annotated_image.shape[0]*2))
+            resize_factor = 0.75
+            annotated_image = cv2.resize(annotated_image, (int(annotated_image.shape[1]*resize_factor), 
+                    int(annotated_image.shape[0]*resize_factor)))
+          
             cv2.imshow("Object Detection", annotated_image)
             cv2.waitKey(1)
     
@@ -97,7 +100,8 @@ else:
         # yolov8 prediction
         annotated_image, boxes, num_flowers, num_stamen = detect(frame)
         # make frame twice as large
-        annotated_image = cv2.resize(annotated_image, (annotated_image.shape[1]*2, annotated_image.shape[0]*2))
+        resize_factor = 0.75
+        annotated_image = cv2.resize(annotated_image, (annotated_image.shape[1]*resize_factor, annotated_image.shape[0]*resize_factor))
           
         # Display the frame
         cv2.imshow("Object Detection", annotated_image)

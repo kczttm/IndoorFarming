@@ -145,7 +145,7 @@ def get_flower_template_pcd(visualize=True, real_flower=False):
     filtered_flower = filter_pts_data(fake_flower_template_rotated, 
                                       x_min, x_max, y_min, y_max, z_min, z_max)
     if real_flower:
-        real_flower_diameter = 0.024 # meters
+        real_flower_diameter = 0.030 # meters
         fake_flower_diameter = 0.042 # meters
         ratio = real_flower_diameter/fake_flower_diameter
         filtered_flower[:, 0:3] = filtered_flower[:, 0:3] * ratio
@@ -252,11 +252,11 @@ def save_registration_result(source, target, transformation, output_file_path):
     vis.add_geometry(source_temp)
     vis.add_geometry(target_temp)
 
-    vis.get_view_control().rotate(10.0, 0.0)
+    vis.get_view_control().rotate(0.0, 0.0)
     vis.poll_events()
     vis.update_renderer()
     vis.capture_screen_image(output_file_path)
-    vis.destroy_window()
+    # vis.destroy_window()
 
 
 def rotate_frame_on_ball(ball_center, roll, pitch, yaw, centering=True):

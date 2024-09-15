@@ -17,7 +17,7 @@ def arduino_connect(port='/dev/ttyUSB0'):
     SerialObj.stopbits = 1     # Number of Stop bits = 1
     SerialObj.timeout  = None  # Setting timeouts: None = waits forever
     clear_buffer(SerialObj)
-    time.sleep(3)              # timing for Arduino
+    time.sleep(1)              # timing for Arduino
 
     # Expected command format: Expected format: "<ABC 123;>"
     # P - positional
@@ -62,14 +62,16 @@ def clear_buffer(SerialObj):
     SerialObj.read_all()
 
 
-def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
-               real_flower=False):
+def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=19,
+               real_flower=True):
+    # zoom 21 fake flower
+
     if not real_flower:
         threshold = 40
         p_gain = 1 / 80
     else:
-        threshold = 100
-        p_gain = 1 / 120
+        threshold = 20
+        p_gain = 1 / 60
     
     t_start = None # time to wait after the focus is achieved
     t_max = 5 # 5 seconds
@@ -246,7 +248,8 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=21,
 if __name__ == '__main__':
     SerialObj = arduino_connect()
     time.sleep(2)
-    auto_focus(SerialObj)
+    # auto_focus(SerialObj)
+    auto_focus(SerialObj, real_flower=True, predefined_pos=80, predefined_zoom = 60)
     # write_only(SerialObj, "<P 0;>")
     # time.sleep(2)
     # write_only(SerialObj, "<Z 180;>")

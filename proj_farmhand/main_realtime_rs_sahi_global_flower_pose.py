@@ -39,6 +39,8 @@ class RealSenseSubscriber(Node):
         self.bridge = CvBridge()
         self.depth_img = None
         self.intrinsics = None
+        self.sahi_n_slices = 4  # increase this number is target is further away
+        self.overlap_ratio = 0.75
 
     def image_callback(self, msg):
         if self.depth_img is None or self.intrinsics is None:
@@ -60,9 +62,15 @@ class RealSenseSubscriber(Node):
         
         # When Slice Height and Width are None, the size will be determined autonomously
         pred_list = detect_sahi(frame,
-                                slice_height=h//4,
-                                slice_width=w//4)
-        annotated_image, flower_centers_in_cam_frame = draw_sahi_boxes(frame, pred_list, self.depth_img, self.intrinsics)
+                                slice_height=h//self.sahi_n_slices,
+                                slice_width=w//self.sahi_n_slices,
+                                overlap_h_ratio=self.overlap_ratio,
+                                overlap_w_ratio=self.overlap_ratio)
+        annotated_image, flower_centers_in_world_frame = draw_sahi_boxes(frame, 
+                                                                       pred_list, 
+                                                                       self.depth_img, 
+                                                                       self.intrinsics,
+                                                                       H_wd_rs=None)
         # make frame twice as large
         annotated_image = cv2.resize(annotated_image, (int(w/1.5), int(h/1.5)))
         cv2.imshow("Object Detection", annotated_image)
