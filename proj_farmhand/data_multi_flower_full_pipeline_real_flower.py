@@ -388,38 +388,60 @@ def robot_micro_adjust(SerialObj, REAL_FLOWER=False):
 
             if not REAL_FLOWER:
                 pix_error_micro, ang_error = calc_xy_plane_pose_error(center, radius_list)
+                
+                # print("Pix Error: ", pix_error_micro, "Ang Error: ", np.degrees(ang_error))
+
+                flower_centered = np.linalg.norm(pix_error_micro[0:2]) < 250
+
+                ang_error_for_Rot = 0 # no rotation for now
+                # case: if the flower has rotated to almost upright
+                if ang_error < np.radians(15):
+                    # ang_error_for_Rot = ang_error # correcting small angle error
+                    ang_error = 0
+                    # print("Small Angle Error: ", np.degrees(ang_error_for_Rot))
+                    if flower_centered:
+                        REACHED = True
+                
+                # case: if the flower is not too far away from center
+                if flower_centered: 
+                    pix_error_micro = np.zeros(3)
+                    # convert angle error to the micro +z error: map (0~90)*kp_ang to pixel error
+                    pix_error_micro[2] = -np.degrees(ang_error) * kp_ang
+
+                print("area: ", radius_list[0]*radius_list[1])
+                # case: if the flower center has not been detected
+                if radius_list[0]*radius_list[1] < 10000:
+                    pix_error_micro = np.zeros(3)
+                    pix_error_micro[2] = -10 # move the fork up slowly
             else:
                 pix_error_micro, focus_score, center_crop = calc_xy_plane_focus_error(center, frame_raw)
-            
-            # print("Pix Error: ", pix_error_micro, "Ang Error: ", np.degrees(ang_error))
+                flower_centered = np.linalg.norm(pix_error_micro[0:2]) < 250
+                focus_threshold = 30
+                focus_error = focus_threshold + 15 - focus_score # from 45 to 15
 
-            flower_centered = np.linalg.norm(pix_error_micro[0:2]) < 250
-
-            ang_error_for_Rot = 0 # no rotation for now
-            # case: if the flower has rotated to almost upright
-            if ang_error < np.radians(15):
-                # ang_error_for_Rot = ang_error # correcting small angle error
-                ang_error = 0
-                # print("Small Angle Error: ", np.degrees(ang_error_for_Rot))
-                if flower_centered:
-                    REACHED = True
+                if focus_score >= focus_threshold: # images are in focus
+                    focus_error = 0
+                    if flower_centered:
+                        REACHED = True
+                
+                # case: if the flower is not too far away from center
+                if flower_centered: 
+                    pix_error_micro = np.zeros(3)
+                    # convert angle error to the micro +z error: map (0~90)*kp_ang to pixel error
+                    pix_error_micro[2] = -focus_error * kp_ang
+                
+                # case: if the flower center has not been detected
+                if radius_list[0]*radius_list[1] < 10000:
+                    pix_error_micro = np.zeros(3)
+                    pix_error_micro[2] = -10 # move the fork up slowly
+                    
+      
             
-            # case: if the flower is not too far away from center
-            if flower_centered: 
-                pix_error_micro = np.zeros(3)
-                # convert angle error to the micro +z error: map (0~90)*kp_ang to pixel error
-                pix_error_micro[2] = -np.degrees(ang_error) * kp_ang
-
-            print("area: ", radius_list[0]*radius_list[1])
-            # case: if the flower center has not been detected
-            if radius_list[0]*radius_list[1] < 10000:
-                pix_error_micro = np.zeros(3)
-                pix_error_micro[2] = -10 # move the fork up slowly
-            
+            # converting to world frame error now
 
             pix_error_wd = R_wd_micro @ pix_error_micro * kp_pos
             pos_error_wd = pix_error_wd / focal_length * desired_z
-            print("Position Error: ", pos_error_wd, "Angle Error: ", np.degrees(ang_error)*kp_ang)
+            print("Position Error: ", pos_error_wd)
 
             p_ee_fork = H_ee_fork[:3,3]
 

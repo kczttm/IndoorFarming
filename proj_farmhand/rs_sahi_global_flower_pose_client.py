@@ -46,7 +46,7 @@ class RealSenseFlowerPosesActionClient(Node):
 
 
     
-def main(args=None, sahi_n_slices = 2):
+def main(args=None, sahi_n_slices = 4):
     rclpy.init(args=args)
     action_client = RealSenseFlowerPosesActionClient()
 

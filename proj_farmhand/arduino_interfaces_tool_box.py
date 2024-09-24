@@ -277,7 +277,7 @@ def auto_focus(SerialObj, cam_id=4, predefined_pos=635, predefined_zoom=19,
                 score_file = open("focus_score_log.txt", "w")
                 record = True
         if usr_key == ord('v'): # Enable toothbrush motor for 5 seconds (can adjust number)
-            motor_command('V', 5000)
+            motor_command(SerialObj, 'V', 5000)
         if usr_key == ord('m'): # Mark pollen on a fake plant
             pollen_mark(frame, 'fake')
 
@@ -293,7 +293,8 @@ if __name__ == '__main__':
     SerialObj = arduino_connect()
     time.sleep(2)
     # auto_focus(SerialObj)
-    auto_focus(SerialObj, real_flower=True, predefined_pos=80, predefined_zoom = 60)
+    # auto_focus(SerialObj, real_flower=True, predefined_pos=80, predefined_zoom = 60)
+    auto_focus(SerialObj, real_flower=False, predefined_pos=635, predefined_zoom = 19)
     # write_only(SerialObj, "<P 0;>")
     # time.sleep(2)
     # write_only(SerialObj, "<Z 180;>")
