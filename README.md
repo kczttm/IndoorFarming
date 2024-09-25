@@ -10,11 +10,11 @@ First open a powershell and check nvidia driver status:
 ```
 
 ### For Ubuntu 22.04 please starts here
-1. Install Docker Engine from [this guild]{https://docs.docker.com/engine/install/ubuntu/}.
+1. Install Docker Engine from [this guild](https://docs.docker.com/engine/install/ubuntu/).
 
-2. Configure Docker for rootless access [here]{https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user}.
+2. Configure Docker for rootless access [here](https://docs.docker.com/engine/install/linux-postinstall/).
 
-3. Follow the [Developer Environment Setup]{https://nvidia-isaac-ros.github.io/getting_started/dev_env_setup.html} to install nvidia-container-toolkit, Git LFS, and setup `~/workspaces/isaac_ros-dev/src` as `ISAAC_ROS_WS`.
+3. Follow the [Developer Environment Setup](https://nvidia-isaac-ros.github.io/getting_started/dev_env_setup.html) to install nvidia-container-toolkit, Git LFS, and setup `~/workspaces/isaac_ros-dev/src` as `ISAAC_ROS_WS`.
 
 ### Obtain the repository
 ```
@@ -35,7 +35,7 @@ Move the Isaac ROS Common Config file to home
 ```
 cp ./.isaac_ros_common-config ~
 ```
-If you have a Kinova arm, consider using our kinova controll library posted [here]{https://github.com/kczttm/ros2_kinova_ws}. 
-Otherwise please configure your docker environment following the guild from [here]{https://nvidia-isaac-ros.github.io/concepts/docker_devenv/index.html#development-environment}
+If you have a Kinova arm, consider using our kinova controll library posted [here](https://github.com/kczttm/ros2_kinova_ws).
+Otherwise please configure your docker environment following the guild from [here](https://nvidia-isaac-ros.github.io/concepts/docker_devenv/index.html#development-environment).
 
 
