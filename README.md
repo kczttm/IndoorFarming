@@ -8,6 +8,7 @@ First open a powershell and check nvidia driver status:
 ```
 > nvidia-smi
 ```
+TODO: finish this after experimenting with Rohan
 
 ### For Ubuntu 22.04 please starts here
 1. Install Docker Engine from [this guild](https://docs.docker.com/engine/install/ubuntu/).
