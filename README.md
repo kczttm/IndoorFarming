@@ -44,4 +44,17 @@ cp ./.isaac_ros_common-config ~
 If you have a Kinova arm, consider using our kinova controll library posted [here](https://github.com/kczttm/ros2_kinova_ws).
 Otherwise please configure your docker environment following the guild from [here](https://nvidia-isaac-ros.github.io/concepts/docker_devenv/index.html#development-environment).
 
+## Use Guide
+### Entering Docker
+We will add the following shortcut to build a docker env according to `~/.isaac_ros_common-config`
+```
+echo "alias ldb='cd ${ISAAC_ROS_WS}/src/isaac_ros_common && ./scripts/run_dev.sh'" >> ~/.bashrc
+echo "alias ld='cd ${ISAAC_ROS_WS}/src/isaac_ros_common && ./scripts/run_dev.sh --skip_image_build'" >> ~/.bashrc
+```
+Note that `ldb` will build the docker first then launch it. `ld` will just launch what has already been built.
 
+Now we start by with a fresh build:
+```
+source ~/.bashrc
+ldb
+```
