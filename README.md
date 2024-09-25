@@ -48,8 +48,8 @@ Otherwise please configure your docker environment following the guild from [her
 ### Entering Docker
 We will add the following shortcut to build a docker env according to `~/.isaac_ros_common-config`
 ```
-echo "alias ldb='cd ${ISAAC_ROS_WS}/src/isaac_ros_common && ./scripts/run_dev.sh'" >> ~/.bashrc
-echo "alias ld='cd ${ISAAC_ROS_WS}/src/isaac_ros_common && ./scripts/run_dev.sh --skip_image_build'" >> ~/.bashrc
+echo "alias ldb='cd ${ISAAC_ROS_WS}src/isaac_ros_common && ./scripts/run_dev.sh'" >> ~/.bashrc
+echo "alias ld='cd ${ISAAC_ROS_WS}src/isaac_ros_common && ./scripts/run_dev.sh --skip_image_build'" >> ~/.bashrc
 ```
 Note that `ldb` will build the docker first then launch it. `ld` will just launch what has already been built.
 
