@@ -13,13 +13,14 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 # figure out how to cache the installation of the following packages
-ENV VIRTUAL_ENV=/usr/local
-ADD --chmod=755 https://astral.sh/uv/install.sh /install.sh
-RUN /install.sh && rm /install.sh
+# ENV VIRTUAL_ENV=/usr/local
+# ADD --chmod=755 https://astral.sh/uv/install.sh /install.sh
+# RUN /install.sh && rm /install.sh
+RUN pip install uv==0.5.1
  
 # cache the installation of the following packages
 RUN --mount=type=cache,target=/root/.cache \
-    /root/.cargo/bin/uv pip install --system \
+    uv pip install --system \
         torch \
         torchvision \
         torchaudio \
@@ -41,5 +42,5 @@ RUN --mount=type=cache,target=/root/.cache \
         sahi 
 
 RUN --mount=type=cache,target=/root/.cache \
-    /root/.cargo/bin/uv pip uninstall --system \
+    uv pip uninstall --system \
         opencv-python-headless 
