@@ -7,7 +7,7 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 #
 # edited by Chuizheng Kong 
-# on 05/07/2024
+# on 07/29/2024
 
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
@@ -34,7 +34,11 @@ RUN --mount=type=cache,target=/root/.cache \
         plotly \
         roboflow \
         nbformat \
-        open3d
+        open3d \
+        imutils \
+        lapx \
+        pyserial \
+        sahi 
 
 RUN --mount=type=cache,target=/root/.cache \
     /root/.cargo/bin/uv pip uninstall --system \

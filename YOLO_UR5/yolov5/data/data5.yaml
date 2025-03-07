@@ -1,5 +1,0 @@
-train: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic-vanilla/train/images
-val: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Blackberry-Endoscopic-vanilla/valid/images
-
-nc: 1
-names: ['r']

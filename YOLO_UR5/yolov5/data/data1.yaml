@@ -1,5 +1,0 @@
-train: /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Artificial_Blackberry_A_B.v1i.yolov5pytorch/train/images
-val:  /Users/tonytu/Desktop/Soft_Robotics_Internship/YOLO_UR5_Test/Artificial_Blackberry_A_B.v1i.yolov5pytorch/test/images
-
-nc: 1
-names: ['0']

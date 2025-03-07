@@ -3,4 +3,8 @@ Strawberry_Plant_Detection/custom_endoscope_artificial_flowers_dataset/
 .venv/
 *.pyc
 *.pyo
+<<<<<<< HEAD
 datasets/
+=======
+ExperimentData/
+>>>>>>> ROS2_Humble
