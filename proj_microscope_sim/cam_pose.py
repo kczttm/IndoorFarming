@@ -1,10 +1,7 @@
-import csv, time, cv2, os, sys
+import csv, time, cv2, os
 import numpy as np
 
 from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
-from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
-from kortex_api.autogen.client_stubs.ControlConfigClientRpc import ControlConfigClient
-from kortex_api.autogen.messages import Base_pb2, BaseCyclic_pb2, Common_pb2
 from gen3_7dof.tool_box import TCPArguments, euler_to_rotation_matrix, quaternion_to_euler
 from gen3_7dof.utilities import DeviceConnection
 
@@ -32,7 +29,7 @@ def get_world_EE_HomoMtx(base):
 
 def get_EE_cam_HomoMtx():
     q = [0, 0, 1, 0] # x, y, z, w
-    P_EE_cam = np.array([0, -0.05, 0.154])
+    p_EE_cam = np.array([0, -0.05, 0.154])
 
     ori_rpy = quaternion_to_euler(q)
     R_EE_cam = euler_to_rotation_matrix(ori_rpy[0], ori_rpy[1], ori_rpy[2])
@@ -93,6 +90,7 @@ def get_next_image_filename(directory):
     if existing_files:
         last_num = int(existing_files[-1].split(".")[0])
         next_num = last_num + 1
+    
     else:
         next_num = 1  # Start from 00001 if no files exist
 
@@ -117,6 +115,7 @@ def save_pose_to_csv(pose, img_filename):
 
 def capture_image(pose):
     ret, frame = cap.read()
+    
     if ret:
         image_filename = get_next_image_filename(save_dir)  # Relative path (e.g., flower/00001.jpg)
         image_path = os.path.join(base_dir, image_filename) 
@@ -128,9 +127,52 @@ def capture_image(pose):
         print("Failed to capture image.")
 
 
-try:
-    print("Move the robot arm to the desired position and press 'c' to capture an image.")
-    print("Press 'z' to quit.")
+def capture_pose_on_keypress():
+    try:
+        print("Move the robot arm to the desired position and press 'c' to capture an image.")
+        print("Press 'z' to quit.")
+
+        # Initialize camera
+        global cap
+        cap = cv2.VideoCapture(0)
+
+        # Turn on the robot arm
+        tcp_args = TCPArguments()
+        with DeviceConnection.createTcpConnection(tcp_args) as router:
+            base = BaseClient(router)
+
+            while True:
+                H_world_EE = get_world_EE_HomoMtx(base)
+                camera_pose = get_world_cam_HomoMtx(H_world_EE)
+                pose_data = {**camera_pose}
+
+                ret, frame = cap.read()
+                if ret:
+                    cv2.imshow("Camera", frame)
+
+                # Wait for user input
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('z'):  # Press 'z' to exit
+                    print("Exiting...")
+                    break
+
+                elif key == ord('c'):
+                    capture_image(pose_data)
+
+                time.sleep(0.5)  # Adjust frequency of logging
+
+
+    except KeyboardInterrupt:
+        print("Process interrupted by user.")
+
+
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
+
+def start_background_pose_capture(interval_sec=1.0, stop_event=None):
+    print("Capturing video frames and poses at 1 fps.")
 
     # Initialize camera
     cap = cv2.VideoCapture(0)
@@ -140,30 +182,11 @@ try:
     with DeviceConnection.createTcpConnection(tcp_args) as router:
         base = BaseClient(router)
 
-        while True:
+        while not stop_event.is_set():
             H_world_EE = get_world_EE_HomoMtx(base)
-            camera_pose = get_world_cam_HomoMtx(H_world_EE)
-            pose_data = {**camera_pose}
+            cam_pose = get_world_cam_HomoMtx(H_world_EE)
+            capture_image(cam_pose)
+            time.sleep(interval_sec)
 
-            ret, frame = cap.read()
-            if ret:
-                cv2.imshow("Camera", frame)
-
-            # Wait for user input
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('c'):  # press 'c' to capture an image
-                capture_image(pose_data)
-
-            elif key == ord('z'):  # Press 'Q' to exit
-                print("Exiting...")
-                break
-
-            time.sleep(0.5)  # Adjust frequency of logging
-
-
-except KeyboardInterrupt:
-    print("Process interrupted by user.")
-
-finally:
     cap.release()
     cv2.destroyAllWindows()

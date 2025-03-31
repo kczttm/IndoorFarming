@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 
 def generate_upper_hemisphere_path_with_orientation(radius=1.0, num_points=10):
@@ -19,6 +18,7 @@ def generate_upper_hemisphere_path_with_orientation(radius=1.0, num_points=10):
     theta = np.linspace(-np.pi / 2, np.pi / 2, num_points)  # Elevation angles
     phi = 0                                                 # Azimuthal angles (Rotation about the Z-axis)
 
+
     # Convert spherical to Cartesian coordinates
     # Case 1: Rotation about the X-axis
     # x = radius * np.sin(theta) * np.sin(phi)
@@ -34,6 +34,7 @@ def generate_upper_hemisphere_path_with_orientation(radius=1.0, num_points=10):
     # x = radius * np.cos(theta)
     # y = radius * np.sin(theta) * np.cos(phi)
     # z = radius * np.sin(theta) * np.sin(phi)
+
 
     # Calculate global orientation (yaw)
     yaw = np.arctan2(y, x)                       # Azimuthal angle 
@@ -58,7 +59,7 @@ def visualize_sphere_with_path(radius=1.0, path_points=None):
     x = radius * np.sin(theta) * np.cos(phi)
     y = radius * np.sin(theta) * np.sin(phi)
     z = radius * np.cos(theta)
-    
+
     # Plot the sphere and the center
     fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='3d')
