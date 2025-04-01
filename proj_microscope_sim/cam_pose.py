@@ -5,6 +5,7 @@ from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
 from gen3_7dof.tool_box import TCPArguments, euler_to_rotation_matrix, quaternion_to_euler
 from gen3_7dof.utilities import DeviceConnection
 
+global cap
 
 def getRotMtx(raw_pose):
     # Take raw pose from the kinova and convert to rotation matrix
@@ -115,7 +116,6 @@ def save_pose_to_csv(pose, img_filename):
 
 def capture_image(pose):
     ret, frame = cap.read()
-    
     if ret:
         image_filename = get_next_image_filename(save_dir)  # Relative path (e.g., flower/00001.jpg)
         image_path = os.path.join(base_dir, image_filename) 
@@ -133,7 +133,6 @@ def capture_pose_on_keypress():
         print("Press 'z' to quit.")
 
         # Initialize camera
-        global cap
         cap = cv2.VideoCapture(0)
 
         # Turn on the robot arm
