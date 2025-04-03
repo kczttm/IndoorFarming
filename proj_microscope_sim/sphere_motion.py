@@ -2,7 +2,7 @@ import cv2, threading
 import numpy as np
 
 from camera_path_6d import generate_upper_hemisphere_path_with_orientation
-from cam_pose import get_world_cam_HomoMtx, capture_image, get_world_EE_HomoMtx, start_background_pose_capture, capture_pose_on_keypress
+from cam_pose import get_world_cam_HomoMtx, capture_image, get_world_EE_HomoMtx, start_background_pose_capture
 
 from gen3_7dof.tool_box import H_mtx_to_kinova_pose_in_base, move_tool_pose_absolute, move_tool_pose_relative, TCPArguments
 from gen3_7dof.utilities import DeviceConnection
@@ -75,28 +75,20 @@ def move_camera_on_path(center, radius=0.12, num_points=10, speed=0.05, capture=
 
 
 # Mode 2: Teleoperation
-def teleop_camera(center=np.array([0, 0, 10]), pos_step=0.01, speed=0.03):
-
-    print("Starting teleop... ")
+def teleop_camera(pos_step=0.01, rot_step=5, speed=0.03):
 
     """
+    (NEED TO CHECK THE CORRECT KEYS)
     Allow manual control of the robot using keyboard:
     - 'w': move forward (+Y)
     - 's': move backward (-Y)
-    - 'e': move forward (+X)
-    - 'q': move backward (-X)
-    - 'a': move forward (+Z)
-    - 'd': move backward (-Z)
+    - 'd': move forward (+X)
+    - 'a': move backward (-X)
+    - 'q': move forward (+Z)
+    - 'e': move backward (-Z)
     - 'c': capture an image
     - 'x': exit teleop
-
-    To rotate about 10 cm +z in camera frame, need to provide ball center
-    reference: rotate_frame_on_ball(H_flower_in_endo[:3,3], 0, flower_pitch, 0)
-    => H_flower_in_endo is the transformation matrix from flower to endoscope, so [0, 0, 10]
     """
-
-    # TODO: Have problem turning on the camera
-    # cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
     # Establish connection to the Kinova robot
     tcp_args = TCPArguments()
@@ -109,12 +101,7 @@ def teleop_camera(center=np.array([0, 0, 10]), pos_step=0.01, speed=0.03):
         black = np.zeros((200, 400, 3), dtype=np.uint8)
 
         while True:
-            # ret, frame = cap.read()
-            # if ret:
-            #     cv2.imshow("Teleop", frame)
-
             cv2.imshow("Teleop", black)
-
             key = cv2.waitKey(10) & 0xFF
 
             motion = None
@@ -122,12 +109,6 @@ def teleop_camera(center=np.array([0, 0, 10]), pos_step=0.01, speed=0.03):
             if key == ord('x'):
                 print('Exiting...')
                 break
-            
-            # TODO: Need to fix the camera capture
-            elif key == ord('c'):
-                H_world_EE = get_world_EE_HomoMtx(base)
-                camera_pose = get_world_cam_HomoMtx(H_world_EE)
-                capture_image(camera_pose)
             
             elif key == ord('w'):
                 print("Moving +Y")
@@ -137,21 +118,40 @@ def teleop_camera(center=np.array([0, 0, 10]), pos_step=0.01, speed=0.03):
                 print("Moving -Y")
                 motion = [0, -pos_step, 0, 0, 0, 0]
 
-            elif key == ord('q'):
-                print("Moving -X")
+            elif key == ord('a'):
                 motion = [-pos_step, 0, 0, 0, 0, 0]
 
-            elif key == ord('e'):
-                print("Moving +X")
+            elif key == ord('d'):
                 motion = [pos_step, 0, 0, 0, 0, 0]
 
-            elif key == ord('a'):
-                print("Moving +Z")
+            elif key == ord('q'):
                 motion = [0, 0, pos_step, 0, 0, 0]
 
-            elif key == ord('d'):
-                print("Moving -Z")
+            elif key == ord('e'):
                 motion = [0, 0, -pos_step, 0, 0, 0]
+
+            elif key == ord('u'):
+                motion = [0, 0, 0, rot_step, 0, 0]
+
+            elif key == ord('j'):
+                motion = [0, 0, 0, -rot_step, 0, 0]
+
+            elif key == ord('i'):
+                motion = [0, 0, 0, 0, rot_step, 0]
+
+            elif key == ord('k'):
+                motion = [0, 0, 0, 0, -rot_step, 0]
+
+            elif key == ord('o'):
+                motion = [0, 0, 0, 0, 0, rot_step]
+                
+            elif key == ord('l'):
+                motion = [0, 0, 0, 0, 0, -rot_step]
+
+            elif key == ord('c'):
+                H_world_EE = get_world_EE_HomoMtx(base)
+                camera_pose = get_world_cam_HomoMtx(H_world_EE)
+                capture_image(camera_pose)
 
             if motion:
                 move_tool_pose_relative(base, base_cyclic, motion, speed)
@@ -168,5 +168,5 @@ if __name__ == "__main__":
     if mode == "path_following":
         move_camera_on_path(center=center, radius=radius, num_points=num_points)
     elif mode == "teleop":
-        teleop_camera(center=center, pos_step=0.01, speed=0.03)
+        teleop_camera(pos_step=0.01, speed=0.03)
         
