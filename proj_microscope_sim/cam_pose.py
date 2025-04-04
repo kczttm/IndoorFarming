@@ -114,8 +114,7 @@ def save_pose_to_csv(pose, img_filename):
         print(f"Pose saved to CSV: {pose}")
 
 
-def capture_image(pose):
-    ret, frame = cap.read()
+def capture_image(pose, ret, frame):
     if ret:
         image_filename = get_next_image_filename(save_dir)  # Relative path (e.g., flower/00001.jpg)
         image_path = os.path.join(base_dir, image_filename) 
@@ -171,21 +170,27 @@ def capture_pose_on_keypress():
 
 
 def start_background_pose_capture(interval_sec=1.0, stop_event=None):
-    print("Capturing video frames and poses at 1 fps.")
+    try:
+        print("Capturing video frames and poses at 1 fps.")
 
-    # Initialize camera
-    cap = cv2.VideoCapture(0)
+        # Initialize camera
+        cap = cv2.VideoCapture(0)
 
-    # Turn on the robot arm
-    tcp_args = TCPArguments()
-    with DeviceConnection.createTcpConnection(tcp_args) as router:
-        base = BaseClient(router)
+        # Turn on the robot arm
+        tcp_args = TCPArguments()
+        with DeviceConnection.createTcpConnection(tcp_args) as router:
+            base = BaseClient(router)
 
-        while not stop_event.is_set():
-            H_world_EE = get_world_EE_HomoMtx(base)
-            cam_pose = get_world_cam_HomoMtx(H_world_EE)
-            capture_image(cam_pose)
-            time.sleep(interval_sec)
+            while not stop_event.is_set():
+                H_world_EE = get_world_EE_HomoMtx(base)
+                cam_pose = get_world_cam_HomoMtx(H_world_EE)
+                capture_image(cam_pose)
+                time.sleep(interval_sec)
 
-    cap.release()
-    cv2.destroyAllWindows()
+    except KeyboardInterrupt:
+        print("Process interrupted by user.")
+
+
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
