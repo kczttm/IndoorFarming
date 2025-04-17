@@ -103,8 +103,8 @@ def free_space_teleop(pos_step=0.01, rot_step=1, speed=0.03):
         """
 
         # Initialize camera
-        cap = cv2.VideoCapture(0)
-
+        # cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(2)
         # Establish connection to the Kinova robot
         tcp_args = TCPArguments()
         with DeviceConnection.createTcpConnection(tcp_args) as router:
@@ -209,39 +209,39 @@ def get_endoscope_tf():
 
     return tf
 
+# TODO:
+# H_cam_des is the delta, not abs position
+# write this into a class
+# Rotation is still weird (roll, pitch, yaw?)
 
-def robot_move_in_camera_frame_relative(H_cam_des, speed=None):
+def robot_move_in_camera_frame_relative(base, H_cam_des, speed=None):
     # note that the H_cam_des mapes between current camera pose and desired camera pose
     # so the input is NOT in world frame
     EE_endo_tf = get_endoscope_tf()
-
-    tcp_args = TCPArguments()
-    with DeviceConnection.createTcpConnection(tcp_args) as router:
-        base = BaseClient(router)
         
-        # Make sure the arm is in Single Level Servoing mode (high-level mode)
-        base_servo_mode = Base_pb2.ServoingModeInformation()
-        base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
-        base.SetServoingMode(base_servo_mode)
+    # Make sure the arm is in Single Level Servoing mode (high-level mode)
+    base_servo_mode = Base_pb2.ServoingModeInformation()
+    base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+    base.SetServoingMode(base_servo_mode)
 
-        H_wd_ee = get_world_EE_HomoMtx(base)
-        H_wd_cam = H_wd_ee @ tf_to_hom_mtx(EE_endo_tf) # get the camera pose in world frame
-        # print("Endoscope Pose in World Frame: \n", H_wd_endo)
+    H_wd_ee = get_world_EE_HomoMtx(base)
+    H_wd_cam = H_wd_ee @ tf_to_hom_mtx(EE_endo_tf) # get the camera pose in world frame
+    # print("Endoscope Pose in World Frame: \n", H_wd_endo)
 
-        H_wd_cam_des = H_wd_cam @ H_cam_des
-        # print("Desired Endoscope Pose in World Frame: \n", H_wd_endo_des)
+    H_wd_cam_des = H_wd_cam @ H_cam_des
+    # print("Desired Endoscope Pose in World Frame: \n", H_wd_endo_des)
 
-        H_wd_ee_des = H_wd_cam_des @ np.linalg.inv(tf_to_hom_mtx(EE_endo_tf))
-        p_world = H_wd_ee_des[:3,3]
-        R_ee = H_wd_ee_des[:3,:3]
+    H_wd_ee_des = H_wd_cam_des @ np.linalg.inv(tf_to_hom_mtx(EE_endo_tf))
+    p_world = H_wd_ee_des[:3,3]
+    R_ee = H_wd_ee_des[:3,:3]
 
-        r_wd, p_wd, y_wd = rotation_matrix_to_euler(R_ee)
-        r_wd, p_wd, y_wd = np.degrees(r_wd), np.degrees(p_wd), np.degrees(y_wd)
-        p_des_kinova = np.array([p_world[0], p_world[1], p_world[2], r_wd, p_wd, y_wd])
-        print("Desired Reorienting Pose: \n", p_des_kinova)
+    r_wd, p_wd, y_wd = rotation_matrix_to_euler(R_ee)
+    r_wd, p_wd, y_wd = np.degrees(r_wd), np.degrees(p_wd), np.degrees(y_wd)
+    p_des_kinova = np.array([p_world[0], p_world[1], p_world[2], r_wd, p_wd, y_wd])
+    print("Desired Reorienting Pose: \n", p_des_kinova)
 
-        move_tool_pose_absolute(base, p_des_kinova, speed=speed)
-        # return H_wd_ee_des, p_des_kinova
+    move_tool_pose_absolute(base, p_des_kinova, speed=speed)
+    # return H_wd_ee_des, p_des_kinova
 
 
 def teleop_on_sphere(center, radius=0.12, pitch_step=0.5, yaw_step=0.5, speed=0.03):
@@ -262,7 +262,8 @@ def teleop_on_sphere(center, radius=0.12, pitch_step=0.5, yaw_step=0.5, speed=0.
         - x: exit
         """
 
-        cap = cv2.VideoCapture(0)
+        # cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(2)  # on laptop
 
         tcp_args = TCPArguments()
         with DeviceConnection.createTcpConnection(tcp_args) as router:
@@ -271,18 +272,11 @@ def teleop_on_sphere(center, radius=0.12, pitch_step=0.5, yaw_step=0.5, speed=0.
             H_world_EE = get_world_EE_HomoMtx(base)  # Get the EE's homogeneous matrix in world frame
             camera_pose_in_world = get_world_cam_HomoMtx(H_world_EE)  # Get the camera's homogeneous matrix in world frame
 
-            cam_pose = np.array([
-                camera_pose_in_world["camera_x"],
-                camera_pose_in_world["camera_y"],
-                camera_pose_in_world["camera_z"]
-            ])
-
-            # certer is in camera frame, but cam_pose is in world frame
-            # We need to transform cam_pose to camera frame
-            # H_world_cam = H_world_EE @ get_EE_cam_HomoMtx()
-            # H_world_cam_inv = np.linalg.inv(H_world_cam)
-            # cam_pose = (H_world_cam_inv @ np.append(cam_pose, 1.0))[:3]
-            # print("Camera Pose in Camera Frame: ", cam_pose)
+            # cam_pose = np.array([
+            #     camera_pose_in_world["camera_x"],
+            #     camera_pose_in_world["camera_y"],
+            #     camera_pose_in_world["camera_z"]
+            # ])
 
             direction = center / np.linalg.norm(center)
 
@@ -298,6 +292,8 @@ def teleop_on_sphere(center, radius=0.12, pitch_step=0.5, yaw_step=0.5, speed=0.
 
                 key = cv2.waitKey(10) & 0xFF
 
+                pitch_motion = None
+                yaw_motion = None
                 if key == ord('x'):
                     print("Exiting...")
                     break
@@ -307,21 +303,29 @@ def teleop_on_sphere(center, radius=0.12, pitch_step=0.5, yaw_step=0.5, speed=0.
 
                 elif key == ord('i'):
                     print("Pitching up")
-                    pitch += math.radians(pitch_step)
+                    pitch_motion = pitch + math.radians(pitch_step)
+                    # pitch += math.radians(pitch_step)
 
                 elif key == ord('k'):
-                    pitch -= math.radians(pitch_step)
+                    pitch_motion = pitch - math.radians(pitch_step)
+                    # pitch -= math.radians(pitch_step)
 
                 elif key == ord('j'):
-                    yaw += math.radians(yaw_step)
+                    yaw_motion = yaw + math.radians(yaw_step)
+                    # yaw += math.radians(yaw_step)
 
                 elif key == ord('l'):
-                    yaw -= math.radians(yaw_step)
-
+                    yaw_motion = yaw - math.radians(yaw_step)
+                    # yaw -= math.radians(yaw_step)
                 
-                # Calculate new camera position on the sphere in camera frame
-                H_cam_desired = rotate_frame_on_ball(center, roll=roll, pitch=pitch, yaw=yaw)
-                robot_move_in_camera_frame_relative(H_cam_desired, speed=speed)
+                if pitch_motion or yaw_motion:
+                    H_cam_desired = rotate_frame_on_ball(center, roll=roll, pitch=pitch_motion or pitch, yaw=yaw_motion or yaw)
+                    robot_move_in_camera_frame_relative(base, H_cam_desired, speed=speed)
+
+                    if pitch_motion:
+                        pitch = pitch_motion
+                    if yaw_motion:
+                        yaw = yaw_motion
 
 
     except KeyboardInterrupt:
