@@ -24,7 +24,8 @@ RUN --mount=type=cache,target=/root/.cache \
         torch \
         torchvision \
         torchaudio \
-        opencv-python \
+        "numpy<2.0" \
+        opencv-python==4.10.0.84 \
         pandas \
         scipy \
         scikit-learn \
