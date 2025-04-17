@@ -505,12 +505,16 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
         # put endoscope z-axis right on top of the line
         # put endoscope origin at _lambda:[0,1] along the line
         des_z = rs_flower_loc - p_rs
-        # only consider x and y, setting z to the same as the flower
-        des_z[2] = 0
+
+        # # only consider x and y, setting z to the same as the flower
+        # comment out to align the endoscope z-axis with the flower fully
+        # des_z[2] = 0
+
         p_endo_des = rs_flower_loc - (1.0-_lambda) * des_z
         euler_z = np.arctan2(des_z[1], des_z[0])
-        # euler_y = -np.arctan2(des_z[2], np.linalg.norm(des_z[:2]))
-        euler_y = np.radians(-5)
+        euler_y = -np.arctan2(des_z[2], np.linalg.norm(des_z[:2]))
+        # euler_y = np.radians(-5)  # use this if want custom y tilt
+        
         R_des_wd = euler_to_rotation_matrix(euler_x, euler_y, euler_z) # order is ZYX body frame rotation
         
         # trusting that this conversion between world and home camera conversion is correct
@@ -566,13 +570,13 @@ def robot_pollinate_single_flower(rs_flower_loc=None, _lambda = 0.5, serial_obj=
     print("Pitch: ", np.degrees(flower_pitch))
     
     ### Visulization
-    # draw_registration_result(template_pcd, flower_pcd, H_flower_in_endo)
+    draw_registration_result(template_pcd, flower_pcd, H_flower_in_endo)
     
     #----------store the registration result regardless of the success----------
     run_id_str = str(run_id).zfill(3)
     flower_id_str = str(flower_id).zfill(2)
     registration_img_name = registration_img_path + "run_" + run_id_str +"_flower_num_" + flower_id_str + ".png"
-    save_registration_result(template_pcd, flower_pcd, H_flower_in_endo, registration_img_name)
+    # save_registration_result(template_pcd, flower_pcd, H_flower_in_endo, registration_img_name)
     
     #----------store the flower pose in the world frame----------
     endo_flower_poses = (H_wd_endo_yolo @ H_flower_in_endo[:,3])[:3]
@@ -690,7 +694,7 @@ def main():
 
         # saving the name to be used by the real_sense action client to save the image
         np.save(os.path.join(exp_data_dir, "rs_img_name_str.npy"), rs_img_name)
-        flower_poses_wd, joint_angles_init, H_wd_rs = realsense_get_flower_poses(sahi_n_slices = 6)
+        flower_poses_wd, joint_angles_init, H_wd_rs = realsense_get_flower_poses(sahi_n_slices = 2)
         print(flower_poses_wd)
         
         if flower_poses_wd is None:
@@ -733,7 +737,7 @@ def main():
                                       _lambda = 0.8,
                                       serial_obj=SerialObj,
                                       euler_x=tilt_angle,
-                                      zoom_in=False)
+                                      zoom_in=True)
         save_data() # save all the data in the global variables to the csv file
         
     # move back to the initial pose
