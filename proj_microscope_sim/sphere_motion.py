@@ -38,6 +38,8 @@ class MoveRobot:
         self.roll = 0
 
         self.EE_endo_tf = self.get_endoscope_tf()
+        self.pose_log = []
+
 
     def __del__(self):
         self.cap.release()
@@ -164,6 +166,15 @@ class MoveRobot:
         return R
     
 
+    def save_pose_log(self, filename="camera_poses.npy"):
+        """
+        Save all logged camera poses to a .npy file.
+        """
+        poses_array = np.array(self.pose_log)  # shape (N, 4, 4)
+        np.save(filename, poses_array)
+        print(f"[INFO] Saved {len(self.pose_log)} poses to {filename}.")
+    
+
     def teleop_on_sphere(self, pitch_step=0.5, yaw_step=0.5, speed=0.03):
         print("Starting teleop on sphere...")
 
@@ -179,6 +190,7 @@ class MoveRobot:
             H_cam_delta = np.eye(4)
 
             if key == ord('x'):
+                self.save_pose_log("teleop_camera_poses.npy")
                 print("Exiting sphere teleop...")
                 break
             elif key == ord('c'):
@@ -197,6 +209,7 @@ class MoveRobot:
             if not np.allclose(H_cam_delta, np.eye(4)):
                 H_wd_cam_des = H_wd_cam @ H_cam_delta
                 self.robot_move_in_camera_frame_relative(H_wd_cam_des, speed=speed)
+                self.pose_log.append(H_wd_cam_des.copy())
 
 
     def capture_image(self):
