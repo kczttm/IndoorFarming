@@ -23,13 +23,16 @@ class MoveRobot:
 
         # Initialize camera
         # device_id = 2 if using laptop
-        self.cap = cv2.VideoCapture(self.device_id)
-
-        # Initialize Kinova robot connection
-        tcp_args = TCPArguments()
-        self.router = DeviceConnection.createTcpConnection(tcp_args)
-        self.base = BaseClient(self.router)
-        self.base_cyclic = BaseCyclicClient(self.router)
+        try:
+            self.cap = cv2.VideoCapture(self.device_id)
+            if not self.cap.isOpened():
+                raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
+            
+            print(f"[INFO] Camera {self.device_id} opened successfully.")
+        
+        except Exception as e:
+            print(f"[WARN] Camera initialization failed: {e}")
+            self.cap = None
 
         # Initialize orientation
         direction = self.center / np.linalg.norm(self.center)
@@ -42,10 +45,19 @@ class MoveRobot:
 
 
     def __del__(self):
-        self.cap.release()
-        cv2.destroyAllWindows()
-        self.router.close()
- 
+        try:
+            if self.cap:
+                self.cap.release()
+                print("[INFO] Camera released.")
+        except Exception:
+            pass
+
+        try:
+            cv2.destroyAllWindows()
+            print("[INFO] OpenCV windows closed.")
+        except Exception:
+            pass
+
 
     """
     Mode 1: Path-Following
@@ -61,16 +73,24 @@ class MoveRobot:
             capture_thread.start()
 
         try:
-            for point in poses:
-                x, y, z, yaw = point
-                position = self.center + np.array([x, y, z])
-                direc = position - self.center
-                pitch_angle = np.arctan2(direc[0], direc[2])
-                roll_angle = 0
+            tcp_args = TCPArguments()
+            with DeviceConnection.createTcpConnection(tcp_args) as router:
+                base = BaseClient(router)
+                base_servo_mode = Base_pb2.ServoingModeInformation()
+                base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+                base.SetServoingMode(base_servo_mode)
 
-                H = rotate_frame_on_ball(self.center, roll=roll_angle, pitch=pitch_angle, yaw=yaw)
-                kinova_pose = H_mtx_to_kinova_pose_in_base(H)
-                move_tool_pose_absolute(self.base, kinova_pose, speed)
+                for point in poses:
+                    x, y, z, yaw = point
+                    position = self.center + np.array([x, y, z])
+                    direc = position - self.center
+                    pitch_angle = np.arctan2(direc[0], direc[2])
+                    roll_angle = 0
+
+                    H = rotate_frame_on_ball(self.center, roll=roll_angle, pitch=pitch_angle, yaw=yaw)
+                    kinova_pose = H_mtx_to_kinova_pose_in_base(H)
+                    move_tool_pose_absolute(base, kinova_pose, speed)
+        
         finally:
             if capture:
                 stop_event.set()
@@ -82,56 +102,64 @@ class MoveRobot:
     """
     def free_space_teleop(self, pos_step=0.01, rot_step=1, speed=0.03):
         print("Starting free-space teleop...")
-        while True:
-            ret, frame = self.cap.read()
-            if ret:
-                cv2.imshow("Teleop", frame)
+        tcp_args = TCPArguments()
+        with DeviceConnection.createTcpConnection(tcp_args) as router:
+            base = BaseClient(router)
+            base_cyclic = BaseCyclicClient(router)
+            base_servo_mode = Base_pb2.ServoingModeInformation()
+            base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+            base.SetServoingMode(base_servo_mode)
 
-            key = cv2.waitKey(10) & 0xFF
-            motion = None
+            while True:
+                ret, frame = self.cap.read()
+                if ret:
+                    cv2.imshow("Teleop", frame)
 
-            if key == ord('x'):
-                print("Exiting...")
-                break
+                key = cv2.waitKey(10) & 0xFF
+                motion = None
 
-            elif key == ord('c'):
-                self.capture_image()
+                if key == ord('x'):
+                    print("Exiting...")
+                    break
 
-            # Transition
-            elif key in [ord('w'), ord('s'), ord('e'), ord('q'), ord('a'), ord('d')]:
-                # 6-element array: [x, y, z, roll, pitch, yaw]
-                motion = [0, 0, 0, 0, 0, 0]
-                if key == ord('w'):
-                    motion[1] = pos_step
-                elif key == ord('s'):
-                    motion[1] = -pos_step
-                elif key == ord('e'):
-                    motion[0] = pos_step
-                elif key == ord('q'):
-                    motion[0] = -pos_step
-                elif key == ord('a'):
-                    motion[2] = pos_step
-                elif key == ord('d'):
-                    motion[2] = -pos_step
+                elif key == ord('c'):
+                    self.capture_image()
 
-            # Rotation
-            elif key in [ord('u'), ord('j'), ord('i'), ord('k'), ord('o'), ord('l')]:
-                motion = [0, 0, 0, 0, 0, 0]
-                if key == ord('u'):
-                    motion[3] = rot_step
-                elif key == ord('j'):
-                    motion[3] = -rot_step
-                elif key == ord('i'):
-                    motion[4] = rot_step
-                elif key == ord('k'):
-                    motion[4] = -rot_step
-                elif key == ord('o'):
-                    motion[5] = rot_step
-                elif key == ord('l'):
-                    motion[5] = -rot_step
+                # Transition
+                elif key in [ord('w'), ord('s'), ord('e'), ord('q'), ord('a'), ord('d')]:
+                    # 6-element array: [x, y, z, roll, pitch, yaw]
+                    motion = [0, 0, 0, 0, 0, 0]
+                    if key == ord('w'):
+                        motion[1] = pos_step
+                    elif key == ord('s'):
+                        motion[1] = -pos_step
+                    elif key == ord('e'):
+                        motion[0] = pos_step
+                    elif key == ord('q'):
+                        motion[0] = -pos_step
+                    elif key == ord('a'):
+                        motion[2] = pos_step
+                    elif key == ord('d'):
+                        motion[2] = -pos_step
 
-            if motion:
-                move_tool_pose_relative(self.base, self.base_cyclic, motion, speed)
+                # Rotation
+                elif key in [ord('u'), ord('j'), ord('i'), ord('k'), ord('o'), ord('l')]:
+                    motion = [0, 0, 0, 0, 0, 0]
+                    if key == ord('u'):
+                        motion[3] = rot_step
+                    elif key == ord('j'):
+                        motion[3] = -rot_step
+                    elif key == ord('i'):
+                        motion[4] = rot_step
+                    elif key == ord('k'):
+                        motion[4] = -rot_step
+                    elif key == ord('o'):
+                        motion[5] = rot_step
+                    elif key == ord('l'):
+                        motion[5] = -rot_step
+
+                if motion:
+                    move_tool_pose_relative(base, base_cyclic, motion, speed)
 
 
     """
@@ -178,49 +206,61 @@ class MoveRobot:
     def teleop_on_sphere(self, pitch_step=0.5, yaw_step=0.5, speed=0.03):
         print("Starting teleop on sphere...")
 
-        while True:
-            ret, frame = self.cap.read()
-            if ret:
-                cv2.imshow("Sphere Teleop", frame)
+        tcp_args = TCPArguments()
+        with DeviceConnection.createTcpConnection(tcp_args) as router:
+            base = BaseClient(router)
+            base_servo_mode = Base_pb2.ServoingModeInformation()
+            base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+            base.SetServoingMode(base_servo_mode)
 
-            key = cv2.waitKey(10) & 0xFF
+            while True:
+                ret, frame = self.cap.read()
+                if ret:
+                    cv2.imshow("Sphere Teleop", frame)
 
-            H_wd_ee = get_world_EE_HomoMtx(self.base)
-            H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_endo_tf)
-            H_cam_delta = np.eye(4)
+                key = cv2.waitKey(10) & 0xFF
 
-            if key == ord('x'):
-                self.save_pose_log("teleop_camera_poses.npy")
-                print("Exiting sphere teleop...")
-                break
-            elif key == ord('c'):
-                self.capture_image()
+                H_wd_ee = get_world_EE_HomoMtx(base)
+                H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_endo_tf)
+                H_cam_delta = np.eye(4)
 
-            elif key == ord('i'):
-                # self.pitch += math.radians(pitch_step)
-                H_cam_delta[:3, :3] = self.small_rotation('x', math.radians(pitch_step))
-            elif key == ord('k'):
-                H_cam_delta[:3, :3] = self.small_rotation('x', -math.radians(pitch_step))
-            elif key == ord('j'):
-                H_cam_delta[:3, :3] = self.small_rotation('y', math.radians(yaw_step))
-            elif key == ord('l'):
-                H_cam_delta[:3, :3] = self.small_rotation('y', -math.radians(yaw_step))
+                if key == ord('x'):
+                    self.save_pose_log("teleop_camera_poses.npy")
+                    print("Exiting sphere teleop...")
+                    break
+                elif key == ord('c'):
+                    self.capture_image(base)
 
-            if not np.allclose(H_cam_delta, np.eye(4)):
-                H_wd_cam_des = H_wd_cam @ H_cam_delta
-                self.robot_move_in_camera_frame_relative(H_wd_cam_des, speed=speed)
-                self.pose_log.append(H_wd_cam_des.copy())
+                elif key == ord('i'):
+                    # self.pitch += math.radians(pitch_step)
+                    H_cam_delta[:3, :3] = self.small_rotation('x', math.radians(pitch_step))
+                elif key == ord('k'):
+                    H_cam_delta[:3, :3] = self.small_rotation('x', -math.radians(pitch_step))
+                elif key == ord('j'):
+                    H_cam_delta[:3, :3] = self.small_rotation('y', math.radians(yaw_step))
+                elif key == ord('l'):
+                    H_cam_delta[:3, :3] = self.small_rotation('y', -math.radians(yaw_step))
+
+                if not np.allclose(H_cam_delta, np.eye(4)):
+                    H_wd_cam_des = H_wd_cam @ H_cam_delta
+
+                    pos = H_wd_cam_des[:3, 3]
+                    dir_vec = pos - self.center
+                    dir_vec /= np.linalg.norm(dir_vec)
+
+                    self.robot_move_in_camera_frame_relative(base, H_wd_cam_des, speed=speed)
+                    self.pose_log.append(H_wd_cam_des.copy())
 
 
-    def capture_image(self):
+    def capture_image(self, base):
         ret, frame = self.cap.read()
         if ret:
-            H_world_EE = get_world_EE_HomoMtx(self.base)  # Get the EE's homogeneous matrix in world frame
+            H_world_EE = get_world_EE_HomoMtx(base)  # Get the EE's homogeneous matrix in world frame
             cam_pose = get_world_cam_HomoMtx(H_world_EE)  # Get the camera's homogeneous matrix in world frame
             capture_image(cam_pose, ret=ret, frame=frame)
 
 
-    def robot_move_in_camera_frame_relative(self, H_cam_desired, speed=None):
+    def robot_move_in_camera_frame_relative(self, base, H_cam_desired, speed=None):
         """
         Returns the default hardcoded transform from end-effector to camera
         The camera is:
@@ -236,9 +276,9 @@ class MoveRobot:
         r_wd, p_wd, y_wd = np.degrees(r_wd), np.degrees(p_wd), np.degrees(y_wd)
 
         p_des_kinova = np.array([p_world[0], p_world[1], p_world[2], r_wd, p_wd, y_wd])
-        move_tool_pose_absolute(self.base, p_des_kinova, speed=speed)
+        move_tool_pose_absolute(base, p_des_kinova, speed=speed)
 
 
 if __name__ == "__main__":
-    robot = MoveRobot(center=np.array([0.0, 0.0, 10.0]))
+    robot = MoveRobot(center=np.array([0.0, 0.0, 0.1]))
     robot.teleop_on_sphere()
