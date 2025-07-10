@@ -16,7 +16,7 @@ from proj_farmhand.ICP_tool_box import rotate_frame_on_ball
 
 
 class MoveRobot:
-    def __init__(self, center=np.array([0.0, 0.0, 10.0]), radius=0.12, device_id=2):
+    def __init__(self, center, radius=0.12, device_id=2):
         self.center = center
         self.radius = radius
         self.device_id = device_id
@@ -40,7 +40,7 @@ class MoveRobot:
         self.yaw = np.arctan2(direction[1], direction[0])
         self.roll = 0
 
-        self.EE_endo_tf = self.get_endoscope_tf()
+        self.EE_endo_tf = self.get_EE_endoscope_tf()
         self.pose_log = []
 
 
@@ -165,7 +165,13 @@ class MoveRobot:
     """
     Mode 3: Teleoperation on Sphere
     """
-    def get_endoscope_tf(self):
+    def get_EE_endoscope_tf(self):
+        """
+        Returns the default hardcoded transform from end-effector to camera
+        The camera is:
+        - Rotated 180° about the Z-axis of the EE frame
+        - Translated -0.05m along EE Y and +0.11m along EE Z
+        """
         EE_endo_tf = TransformStamped()
         EE_endo_tf.header.frame_id = "end_effector"
         EE_endo_tf.child_frame_id = "endoscope"
@@ -176,7 +182,7 @@ class MoveRobot:
         EE_endo_tf.transform.rotation.y = 0.0
         EE_endo_tf.transform.rotation.z = 1.0
         EE_endo_tf.transform.rotation.w = 0.0
-
+        
         return EE_endo_tf
 
 
@@ -204,7 +210,7 @@ class MoveRobot:
     
 
     def teleop_on_sphere(self, pitch_step=0.5, yaw_step=0.5, speed=0.03):
-        print("Starting teleop on sphere...")
+        print("[INFO] Starting teleop on sphere…")
 
         tcp_args = TCPArguments()
         with DeviceConnection.createTcpConnection(tcp_args) as router:
@@ -221,34 +227,55 @@ class MoveRobot:
                 key = cv2.waitKey(10) & 0xFF
 
                 H_wd_ee = get_world_EE_HomoMtx(base)
-                H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_endo_tf)
+                init_H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_endo_tf)
+                H_cam_flower = np.array([[1, 0, 0, 0],
+                                        [0, 1, 0, 0],
+                                        [0, 0, 1, 0.1],  # +10 cm in Z
+                                        [0, 0, 0, 1]
+                                        ])
+                H_wd_flower = init_H_wd_cam @ H_cam_flower
                 H_cam_delta = np.eye(4)
 
+                moved = False
+               
                 if key == ord('x'):
                     self.save_pose_log("teleop_camera_poses.npy")
-                    print("Exiting sphere teleop...")
+                    print("[INFO] Exiting sphere teleop.")
                     break
-                elif key == ord('c'):
-                    self.capture_image(base)
+
+                # elif key == ord('c'):
+                #     self.capture_image(base)
 
                 elif key == ord('i'):
-                    # self.pitch += math.radians(pitch_step)
                     H_cam_delta[:3, :3] = self.small_rotation('x', math.radians(pitch_step))
+                    moved = True
+
                 elif key == ord('k'):
                     H_cam_delta[:3, :3] = self.small_rotation('x', -math.radians(pitch_step))
+                    moved = True
+                    
                 elif key == ord('j'):
                     H_cam_delta[:3, :3] = self.small_rotation('y', math.radians(yaw_step))
+                    moved = True
+                    
                 elif key == ord('l'):
                     H_cam_delta[:3, :3] = self.small_rotation('y', -math.radians(yaw_step))
+                    moved = True
 
-                if not np.allclose(H_cam_delta, np.eye(4)):
-                    H_wd_cam_des = H_wd_cam @ H_cam_delta
+                if moved:
+                    H_wd_cam = self.pose_log[-1] if self.pose_log else init_H_wd_cam
 
-                    pos = H_wd_cam_des[:3, 3]
-                    dir_vec = pos - self.center
-                    dir_vec /= np.linalg.norm(dir_vec)
+                    # Rotate the camera pose around the flower center
+                    T_to_center = np.eye(4)
+                    T_to_center[:3, 3] = -H_wd_flower[:3, 3]
 
-                    self.robot_move_in_camera_frame_relative(base, H_wd_cam_des, speed=speed)
+                    T_from_center = np.eye(4)
+                    T_from_center[:3, 3] = H_wd_flower[:3, 3]
+
+                    H_wd_cam_des = T_from_center @ H_cam_delta @ T_to_center @ H_wd_cam
+
+                    # Move robot once and log pose
+                    self.robot_move_to_camera_pose(base, H_wd_cam_des, speed=speed)
                     self.pose_log.append(H_wd_cam_des.copy())
 
 
@@ -260,14 +287,7 @@ class MoveRobot:
             capture_image(cam_pose, ret=ret, frame=frame)
 
 
-    def robot_move_in_camera_frame_relative(self, base, H_cam_desired, speed=None):
-        """
-        Returns the default hardcoded transform from end-effector to camera
-        The camera is:
-        - Rotated 180° about the Z-axis of the EE frame
-        - Translated -0.05m along EE Y and +0.11m along EE Z
-        """
-        H_wd_cam_des = H_cam_desired
+    def robot_move_to_camera_pose(self, base, H_wd_cam_des, speed=None):
         H_wd_ee_des = H_wd_cam_des @ np.linalg.inv(tf_to_hom_mtx(self.EE_endo_tf))
 
         p_world = H_wd_ee_des[:3, 3]
