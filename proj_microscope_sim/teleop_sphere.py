@@ -2,10 +2,16 @@ import os
 import cv2
 import math
 import numpy as np
+import threading
 from datetime import datetime
 
-from cam_pose import get_world_cam_HomoMtx, get_world_EE_HomoMtx
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+import subprocess
 
+from cam_pose import get_world_EE_HomoMtx
 from proj_farmhand.main_full_pipeline import robot_move_to_flower, robot_pose_estimation
 
 from geometry_msgs.msg import TransformStamped
@@ -16,11 +22,14 @@ from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 from kortex_api.autogen.messages import Base_pb2
 
 
-class MoveRobot:
+class MoveRobot(Node):
     def __init__(self, save_dir, device_id=2):
+        super().__init__('teleop_camera_publisher')
+
         # self.center = center
         # self.radius = radius
         self.device_id = device_id
+
 
         # Generate timestamped folder
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -28,8 +37,7 @@ class MoveRobot:
         os.makedirs(self.save_dir, exist_ok=True)
 
 
-        # Initialize camera
-        # device_id = 2 if using laptop
+        # Initialize camera; device_id = 2 if using laptop
         try:
             self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
             if not self.cap.isOpened():
@@ -41,15 +49,14 @@ class MoveRobot:
             self.cap = None
 
         
+        # ROS2 image publisher
+        self.image_pub = self.create_publisher(Image, '/endoscope/resize/image', 10)
+        self.bridge = CvBridge()
+
+        
         # Initialize a cv2.VideoWriter object
         self.video_writer = None
 
-
-        # Initialize orientation
-        # direction = self.center / np.linalg.norm(self.center)
-        # self.pitch = np.arctan2(direction[0], direction[2])
-        # self.yaw = np.arctan2(direction[1], direction[0])
-        # self.roll = 0.0
 
         self.EE_cam_tf = self.get_EE_camera_tf()
         self.image_counter = 0
@@ -58,13 +65,30 @@ class MoveRobot:
 
 
     def __del__(self):
-        if self.cap:
-            self.cap.release()
+        try:
+            if hasattr(self, 'cap') and self.cap:
+                self.cap.release()
+                print("[INFO] Camera released")
+        except Exception:
+            pass
 
-        if self.video_writer:
-            self.video_writer.release()
+        try:
+            cv2.destroyAllWindows()
+            print("[INFO] OpenCV windows closed")
+        except Exception:
+            pass
 
-        cv2.destroyAllWindows()
+    
+    def run_yolo_pursuit_client(self, percent_frame_height=0.8):
+        cmd = [
+            "ros2", "run", "proj_farmhand", "yolo_pursuit_action_client",
+            "--ros-args", "-p", f"percent_frame_height:={percent_frame_height}"
+        ]
+        print(f"[INFO] Launching YOLO Pursuit Client (height={percent_frame_height})...")
+        result = subprocess.run(cmd)
+        
+        if result.returncode != 0:
+            raise RuntimeError("[ERROR] YOLO Pursuit Client failed")
 
     
     def get_EE_camera_tf(self):
@@ -121,8 +145,9 @@ class MoveRobot:
         Sets self.center and self.radius accordingly
         """
 
-        # Move camera to the flower via YOLO
-        robot_move_to_flower(percent_frame_height=0.8)
+        # Move camera to the flower via YOLO (run as subprocess)
+        self.run_yolo_pursuit_client(percent_frame_height=0.8)
+
 
         # Estimate flower position in camera frame
         H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
@@ -138,9 +163,7 @@ class MoveRobot:
         # Compute radius (camera to flower distance)
         cam_pos = H_wd_cam[:3, 3]
         self.radius = np.linalg.norm(self.center - cam_pos)
-        # if radius < 0.02:  # just in case, fallback
-        #     radius = 0.12  # fallback_radius
-
+        
         print(f"[INFO] Flower center (world): {self.center}")
         print(f"[INFO] Computed radius: {self.radius:.4f} m")
 
@@ -153,6 +176,14 @@ class MoveRobot:
             base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
             base.SetServoingMode(base_servo_mode)
 
+            warmup_frames = 30
+            for _ in range(warmup_frames):
+                ret, frame = self.cap.read()
+                if ret:
+                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+                    self.image_pub.publish(msg)
+                rclpy.spin_once(self, timeout_sec=0.01)
+
             # Auto-sphere initialization
             self.estimate_flower_center_and_radius(base)
 
@@ -160,6 +191,9 @@ class MoveRobot:
                 ret, frame = self.cap.read()
                 if ret:
                     cv2.imshow("Sphere Teleop", frame)
+                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+                    self.image_pub.publish(msg)
+
 
                 key = cv2.waitKey(10) & 0xFF
 
@@ -293,5 +327,21 @@ class MoveRobot:
     
 
 if __name__ == "__main__":
+    # rclpy.init()
+    # robot = MoveRobot(save_dir='data')
+
+    # # Spin in background to keep publishing camera frames
+    # ros_thread = threading.Thread(target=rclpy.spin, args=(robot,), daemon=True)
+    # ros_thread.start()
+
+    # try:
+    #     # Start teleop interaction in main thread
+    #     robot.teleop_on_sphere()
+    # finally:
+    #     robot.destroy_node()
+    #     rclpy.shutdown()
+    rclpy.init()
     robot = MoveRobot(save_dir='data')
-    robot.teleop_on_sphere()
+    robot.teleop_on_sphere()  # This kicks everything off, including YOLO client
+    robot.destroy_node()
+    rclpy.shutdown()
