@@ -11,7 +11,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import subprocess
 
-from cam_pose import get_world_EE_HomoMtx
+from proj_microscope_sim.cam_pose import get_world_EE_HomoMtx
 from proj_farmhand.main_full_pipeline import robot_move_to_flower, robot_pose_estimation
 
 from geometry_msgs.msg import TransformStamped
@@ -32,26 +32,26 @@ class MoveRobot(Node):
 
 
         # Generate timestamped folder
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.save_dir = os.path.join(save_dir, f"session_{timestamp}")
-        os.makedirs(self.save_dir, exist_ok=True)
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # self.save_dir = os.path.join(save_dir, f"session_{timestamp}")
+        # os.makedirs(self.save_dir, exist_ok=True)
 
 
         # Initialize camera; device_id = 2 if using laptop
-        try:
-            self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
-            if not self.cap.isOpened():
-                raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
-            print(f"[INFO] Camera {self.device_id} opened successfully")
+        # try:
+        #     self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
+        #     if not self.cap.isOpened():
+        #         raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
+        #     print(f"[INFO] Camera {self.device_id} opened successfully")
         
-        except Exception as e:
-            print(f"[WARN] Camera initialization failed: {e}")
-            self.cap = None
+        # except Exception as e:
+        #     print(f"[WARN] Camera initialization failed: {e}")
+        #     self.cap = None
 
         
         # ROS2 image publisher
-        self.image_pub = self.create_publisher(Image, '/endoscope/resize/image', 10)
-        self.bridge = CvBridge()
+        # self.image_pub = self.create_publisher(Image, '/endoscope/resize/image', 10)
+        # self.bridge = CvBridge()
 
         
         # Initialize a cv2.VideoWriter object
@@ -72,11 +72,11 @@ class MoveRobot(Node):
         except Exception:
             pass
 
-        try:
-            cv2.destroyAllWindows()
-            print("[INFO] OpenCV windows closed")
-        except Exception:
-            pass
+        # try:
+        #     cv2.destroyAllWindows()
+        #     print("[INFO] OpenCV windows closed")
+        # except Exception:
+        #     pass
 
     
     def run_yolo_pursuit_client(self, percent_frame_height=0.8):
@@ -146,8 +146,8 @@ class MoveRobot(Node):
         """
 
         # Move camera to the flower via YOLO (run as subprocess)
-        self.run_yolo_pursuit_client(percent_frame_height=0.8)
-
+        # self.run_yolo_pursuit_client(percent_frame_height=0.8)
+        input("[INFO] Press Enter once YOLO has finished auto-centering the flower...")
 
         # Estimate flower position in camera frame
         H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
@@ -176,23 +176,23 @@ class MoveRobot(Node):
             base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
             base.SetServoingMode(base_servo_mode)
 
-            warmup_frames = 30
-            for _ in range(warmup_frames):
-                ret, frame = self.cap.read()
-                if ret:
-                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-                    self.image_pub.publish(msg)
-                rclpy.spin_once(self, timeout_sec=0.01)
+            # warmup_frames = 30
+            # for _ in range(warmup_frames):
+            #     ret, frame = self.cap.read()
+            #     if ret:
+            #         msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            #         self.image_pub.publish(msg)
+            #     rclpy.spin_once(self, timeout_sec=0.01)
 
             # Auto-sphere initialization
             self.estimate_flower_center_and_radius(base)
 
             while True:
-                ret, frame = self.cap.read()
-                if ret:
-                    cv2.imshow("Sphere Teleop", frame)
-                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-                    self.image_pub.publish(msg)
+                # ret, frame = self.cap.read()
+                # if ret:
+                #     cv2.imshow("Sphere Teleop", frame)
+                #     msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+                #     self.image_pub.publish(msg)
 
 
                 key = cv2.waitKey(10) & 0xFF
@@ -311,35 +311,21 @@ class MoveRobot(Node):
 
 
     # TODO: BUG!!!
-    def start_video_recording(self, filename="output.avi", fps=10):
-        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    # def start_video_recording(self, filename="output.avi", fps=10):
+    #     height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    #     width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # or 'MJPG' or 'mp4v'
-        save_path = os.path.join(self.save_dir, filename)
-        self.video_writer = cv2.VideoWriter(save_path, fourcc, fps, (width, height))
-        self.video_recording = True
+    #     fourcc = cv2.VideoWriter_fourcc(*'XVID')  # or 'MJPG' or 'mp4v'
+    #     save_path = os.path.join(self.save_dir, filename)
+    #     self.video_writer = cv2.VideoWriter(save_path, fourcc, fps, (width, height))
+    #     self.video_recording = True
 
-        if not self.video_writer.isOpened():
-            raise RuntimeError(f"[ERROR] Failed to open video file: {save_path}")
+    #     if not self.video_writer.isOpened():
+    #         raise RuntimeError(f"[ERROR] Failed to open video file: {save_path}")
         
-        print(f"[INFO] Video recording started: {save_path}")
+    #     print(f"[INFO] Video recording started: {save_path}")
     
-
-if __name__ == "__main__":
-    # rclpy.init()
-    # robot = MoveRobot(save_dir='data')
-
-    # # Spin in background to keep publishing camera frames
-    # ros_thread = threading.Thread(target=rclpy.spin, args=(robot,), daemon=True)
-    # ros_thread.start()
-
-    # try:
-    #     # Start teleop interaction in main thread
-    #     robot.teleop_on_sphere()
-    # finally:
-    #     robot.destroy_node()
-    #     rclpy.shutdown()
+def main():
     rclpy.init()
     robot = MoveRobot(save_dir='data')
     robot.teleop_on_sphere()  # This kicks everything off, including YOLO client
