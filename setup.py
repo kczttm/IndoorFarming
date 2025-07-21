@@ -39,8 +39,8 @@ setup(
     data_files = package_files(data_files, ['launch/', 'config/']),
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='C. Kong',
-    maintainer_email='ckong35@gatech.edu',
+    maintainer='Tzu-Tung Chen',
+    maintainer_email='tchen604@gatech.edu',
     description='TODO: Package description',
     license='MIT',
     tests_require=['pytest'],
@@ -50,7 +50,8 @@ setup(
             'yolo_display = proj_farmhand.main_realtime_yolo:main',
             'yolo_pursuit_action_server = proj_farmhand.yolo_pursuit_action_server:main',
             'yolo_pursuit_action_client = proj_farmhand.yolo_pursuit_action_client:main',
-            'main_pipeline = proj_farmhand.main_full_pipeline:main',
+            'main_full_pipeline = proj_farmhand.main_full_pipeline:main',
+            'teleop_sphere = proj_microscope_sim.teleop_sphere:main',
             'rs_sahi_global_flower_pose_server = proj_farmhand.rs_sahi_global_flower_pose_server:main',
             'rs_sahi_global_flower_pose_client = proj_farmhand.rs_sahi_global_flower_pose_client:main',
             'main_multi_flower_pipeline = proj_farmhand.main_multi_flower_full_pipeline:main',
@@ -59,3 +60,4 @@ setup(
         ],
     },
 )
+
