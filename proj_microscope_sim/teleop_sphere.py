@@ -29,10 +29,12 @@ class MoveRobot(Node):
         # self.radius = radius
         self.device_id = device_id
 
+
         # Generate timestamped folder
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.save_dir = os.path.join(save_dir, f"session_{timestamp}")
         os.makedirs(self.save_dir, exist_ok=True)
+
 
         # Initialize camera; device_id = 2 if using laptop
         try:
@@ -53,6 +55,7 @@ class MoveRobot(Node):
         
         # Initialize a cv2.VideoWriter object
         self.video_writer = None
+        self.recording = False
 
 
         self.EE_cam_tf = self.get_EE_camera_tf()
@@ -69,11 +72,11 @@ class MoveRobot(Node):
         except Exception:
             pass
 
-        # try:
-        #     cv2.destroyAllWindows()
-        #     print("[INFO] OpenCV windows closed")
-        # except Exception:
-        #     pass
+        try:
+            cv2.destroyAllWindows()
+            print("[INFO] OpenCV windows closed")
+        except Exception:
+            pass
 
     
     # def run_yolo_pursuit_client(self, percent_frame_height=0.8):
@@ -191,6 +194,9 @@ class MoveRobot(Node):
                     msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
                     self.image_pub.publish(msg)
 
+                    if self.recording and self.video_writer is not None:
+                        self.video_writer.write(frame)
+
 
                 key = cv2.waitKey(10) & 0xFF
 
@@ -215,7 +221,13 @@ class MoveRobot(Node):
                     self.capture_image()
 
                 elif key == ord('v'):
-                    self.start_video_recording()
+                    if not self.recording:
+                        self.start_video_recording()
+                        self.recording = True
+                    else:
+                        self.stop_video_recording()
+                        self.recording = False
+
 
                 # Rotation axes ('x', 'y', 'z') are defined in the world frame
                 # The delta angle is applied in the camera frame
@@ -307,7 +319,6 @@ class MoveRobot(Node):
             self.image_counter += 1
 
 
-    # TODO: BUG!!!
     def start_video_recording(self, filename="output.avi", fps=10):
         height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -321,6 +332,13 @@ class MoveRobot(Node):
             raise RuntimeError(f"[ERROR] Failed to open video file: {save_path}")
         
         print(f"[INFO] Video recording started: {save_path}")
+
+    def stop_video_recording(self):
+        if self.video_writer:
+            self.video_writer.release()
+            self.video_writer = None
+            print("[INFO] Video recording stopped.")
+
     
 def main():
     rclpy.init()
