@@ -2,7 +2,6 @@ import os
 import cv2
 import math
 import numpy as np
-import threading
 from datetime import datetime
 
 import rclpy
@@ -23,35 +22,33 @@ from kortex_api.autogen.messages import Base_pb2
 
 
 class MoveRobot(Node):
-    def __init__(self, save_dir, device_id=2):
+    def __init__(self, save_dir, device_id=3):
         super().__init__('teleop_camera_publisher')
 
         # self.center = center
         # self.radius = radius
         self.device_id = device_id
 
-
         # Generate timestamped folder
-        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # self.save_dir = os.path.join(save_dir, f"session_{timestamp}")
-        # os.makedirs(self.save_dir, exist_ok=True)
-
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.save_dir = os.path.join(save_dir, f"session_{timestamp}")
+        os.makedirs(self.save_dir, exist_ok=True)
 
         # Initialize camera; device_id = 2 if using laptop
-        # try:
-        #     self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
-        #     if not self.cap.isOpened():
-        #         raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
-        #     print(f"[INFO] Camera {self.device_id} opened successfully")
+        try:
+            self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
+            if not self.cap.isOpened():
+                raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
+            print(f"[INFO] Camera {self.device_id} opened successfully")
         
-        # except Exception as e:
-        #     print(f"[WARN] Camera initialization failed: {e}")
-        #     self.cap = None
+        except Exception as e:
+            print(f"[WARN] Camera initialization failed: {e}")
+            self.cap = None
 
         
         # ROS2 image publisher
-        # self.image_pub = self.create_publisher(Image, '/endoscope/resize/image', 10)
-        # self.bridge = CvBridge()
+        self.image_pub = self.create_publisher(Image, '/endoscope/resize/image', 10)
+        self.bridge = CvBridge()
 
         
         # Initialize a cv2.VideoWriter object
@@ -79,16 +76,16 @@ class MoveRobot(Node):
         #     pass
 
     
-    def run_yolo_pursuit_client(self, percent_frame_height=0.8):
-        cmd = [
-            "ros2", "run", "proj_farmhand", "yolo_pursuit_action_client",
-            "--ros-args", "-p", f"percent_frame_height:={percent_frame_height}"
-        ]
-        print(f"[INFO] Launching YOLO Pursuit Client (height={percent_frame_height})...")
-        result = subprocess.run(cmd)
+    # def run_yolo_pursuit_client(self, percent_frame_height=0.8):
+    #     cmd = [
+    #         "ros2", "run", "proj_farmhand", "yolo_pursuit_action_client",
+    #         "--ros-args", "-p", f"percent_frame_height:={percent_frame_height}"
+    #     ]
+    #     print(f"[INFO] Launching YOLO Pursuit Client (height={percent_frame_height})...")
+    #     result = subprocess.run(cmd)
         
-        if result.returncode != 0:
-            raise RuntimeError("[ERROR] YOLO Pursuit Client failed")
+    #     if result.returncode != 0:
+    #         raise RuntimeError("[ERROR] YOLO Pursuit Client failed")
 
     
     def get_EE_camera_tf(self):
@@ -139,33 +136,33 @@ class MoveRobot(Node):
         move_tool_pose_absolute(base, p_des_kinova, speed=speed)
 
 
-    def estimate_flower_center_and_radius(self, base):
-        """
-        Automatically detect the flower center and radius using YOLO and ICP
-        Sets self.center and self.radius accordingly
-        """
+    # def estimate_flower_center_and_radius(self, base):
+    #     """
+    #     Automatically detect the flower center and radius using YOLO and ICP
+    #     Sets self.center and self.radius accordingly
+    #     """
 
-        # Move camera to the flower via YOLO (run as subprocess)
-        # self.run_yolo_pursuit_client(percent_frame_height=0.8)
-        input("[INFO] Press Enter once YOLO has finished auto-centering the flower...")
+    #     # Move camera to the flower via YOLO (run as subprocess)
+    #     # self.run_yolo_pursuit_client(percent_frame_height=0.8)
+    #     input("[INFO] Press Enter once YOLO has finished auto-centering the flower...")
 
-        # Estimate flower position in camera frame
-        H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
+    #     # Estimate flower position in camera frame
+    #     H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
 
-        # Get current EE and compute camera pose
-        H_wd_ee = get_world_EE_HomoMtx(base)
-        H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_cam_tf)
+    #     # Get current EE and compute camera pose
+    #     H_wd_ee = get_world_EE_HomoMtx(base)
+    #     H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_cam_tf)
 
-        # Get flower center in world frame
-        flower_in_world = H_wd_cam @ np.append(H_cam_flower[:3, 3], 1.0)
-        self.center = flower_in_world[:3]
+    #     # Get flower center in world frame
+    #     flower_in_world = H_wd_cam @ np.append(H_cam_flower[:3, 3], 1.0)
+    #     self.center = flower_in_world[:3]
 
-        # Compute radius (camera to flower distance)
-        cam_pos = H_wd_cam[:3, 3]
-        self.radius = np.linalg.norm(self.center - cam_pos)
+    #     # Compute radius (camera to flower distance)
+    #     cam_pos = H_wd_cam[:3, 3]
+    #     self.radius = np.linalg.norm(self.center - cam_pos)
         
-        print(f"[INFO] Flower center (world): {self.center}")
-        print(f"[INFO] Computed radius: {self.radius:.4f} m")
+    #     print(f"[INFO] Flower center (world): {self.center}")
+    #     print(f"[INFO] Computed radius: {self.radius:.4f} m")
 
 
     def teleop_on_sphere(self, pitch_step=0.5, yaw_step=0.5, speed=0.03):
@@ -176,23 +173,23 @@ class MoveRobot(Node):
             base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
             base.SetServoingMode(base_servo_mode)
 
-            # warmup_frames = 30
-            # for _ in range(warmup_frames):
-            #     ret, frame = self.cap.read()
-            #     if ret:
-            #         msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-            #         self.image_pub.publish(msg)
-            #     rclpy.spin_once(self, timeout_sec=0.01)
+            warmup_frames = 30
+            for _ in range(warmup_frames):
+                ret, frame = self.cap.read()
+                if ret:
+                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+                    self.image_pub.publish(msg)
+                rclpy.spin_once(self, timeout_sec=0.01)
 
             # Auto-sphere initialization
-            self.estimate_flower_center_and_radius(base)
+            # self.estimate_flower_center_and_radius(base)
 
             while True:
-                # ret, frame = self.cap.read()
-                # if ret:
-                #     cv2.imshow("Sphere Teleop", frame)
-                #     msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-                #     self.image_pub.publish(msg)
+                ret, frame = self.cap.read()
+                if ret:
+                    cv2.imshow("Sphere Teleop", frame)
+                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+                    self.image_pub.publish(msg)
 
 
                 key = cv2.waitKey(10) & 0xFF
@@ -311,23 +308,23 @@ class MoveRobot(Node):
 
 
     # TODO: BUG!!!
-    # def start_video_recording(self, filename="output.avi", fps=10):
-    #     height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    #     width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    def start_video_recording(self, filename="output.avi", fps=10):
+        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
-    #     fourcc = cv2.VideoWriter_fourcc(*'XVID')  # or 'MJPG' or 'mp4v'
-    #     save_path = os.path.join(self.save_dir, filename)
-    #     self.video_writer = cv2.VideoWriter(save_path, fourcc, fps, (width, height))
-    #     self.video_recording = True
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # or 'MJPG' or 'mp4v'
+        save_path = os.path.join(self.save_dir, filename)
+        self.video_writer = cv2.VideoWriter(save_path, fourcc, fps, (width, height))
+        self.video_recording = True
 
-    #     if not self.video_writer.isOpened():
-    #         raise RuntimeError(f"[ERROR] Failed to open video file: {save_path}")
+        if not self.video_writer.isOpened():
+            raise RuntimeError(f"[ERROR] Failed to open video file: {save_path}")
         
-    #     print(f"[INFO] Video recording started: {save_path}")
+        print(f"[INFO] Video recording started: {save_path}")
     
 def main():
     rclpy.init()
-    robot = MoveRobot(save_dir='data')
+    robot = MoveRobot(save_dir='/workspaces/isaac_ros-dev/src/proj_farmhand/proj_microscope_sim/data')
     robot.teleop_on_sphere()  # This kicks everything off, including YOLO client
     robot.destroy_node()
     rclpy.shutdown()
