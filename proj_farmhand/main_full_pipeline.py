@@ -82,7 +82,8 @@ def robot_pose_estimation(parent_node, visualize=False, real_flower=False):
     template_flower_pcd = get_flower_template_pcd(visualize=False, real_flower=real_flower)
 
     # Preprocess the point clouds
-    voxel_size = 0.001
+    # voxel_size = 0.001
+    voxel_size = 0.003
     source_down, source_fpfh = preprocess_point_cloud(template_flower_pcd, voxel_size=voxel_size)
     target_down, target_fpfh = preprocess_point_cloud(target_flower_pcd, voxel_size=voxel_size)
 
@@ -93,7 +94,8 @@ def robot_pose_estimation(parent_node, visualize=False, real_flower=False):
     # Refine with ICP
     result_ICP = refine_registration(source_down, target_down, result_ransac.transformation, voxel_size)
 
-    max_try = 200
+    # max_try = 200
+    max_try = 20
     count = 0
     best_result = result_ICP
     while result_ICP.inlier_rmse > 0.00087 and count < max_try:
