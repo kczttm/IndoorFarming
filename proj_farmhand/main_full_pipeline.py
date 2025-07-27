@@ -21,7 +21,9 @@ from proj_farmhand.ICP_tool_box import rotation_matrix_to_euler, rotate_frame_on
 
 from proj_farmhand.arduino_interfaces_tool_box import arduino_connect, auto_focus
 
-from gen3_7dof.take_pictures_action_client import main as TakePicturesActionClient
+# from gen3_7dof.take_pictures_action_client import main as TakePicturesActionClient
+from gen3_7dof.take_pictures_action_client import TakePicturesActionClient
+
 from gen3_7dof.tool_box import euler_to_rotation_matrix
 from gen3_7dof.tool_box import get_endoscope_tf_from_yaml, get_polli_fork_tf_from_yaml, tf_to_hom_mtx, H_mtx_to_kinova_pose_in_base
 from gen3_7dof.tool_box import TCPArguments, move_tool_pose_absolute, move_tool_pose_relative, get_world_EE_HomoMtx
@@ -35,15 +37,29 @@ from kortex_api.autogen.messages import Base_pb2
 def robot_move_to_flower(percent_frame_height = 0.9):
     YoloPursuitActionClient(percent_frame_height=percent_frame_height)
 
-def robot_take_pictures(spacing=0.005):
-    pictures = TakePicturesActionClient(spacing=spacing)
-    return pictures[0], pictures[-1]
+# def robot_take_pictures(spacing=0.005):
+#     pictures = TakePicturesActionClient(spacing=spacing)
+#     return pictures[0], pictures[-1]
 
-def robot_pose_estimation(visualize=False, real_flower=False):
+
+def robot_take_pictures(spacing=0.005, parent_node=None):
+    if parent_node is None:
+        raise ValueError("Must pass a ROS2 node as 'parent_node'")
+    
+    client = TakePicturesActionClient()
+    parent_node.get_logger().info("Sending take_pictures goal...")
+    images = client.send_goal_and_wait(spacing=spacing)
+    client.destroy_node()
+    return images[0], images[-1]
+
+
+def robot_pose_estimation(parent_node, visualize=False, real_flower=False):
     RAFT_model = load_model()
     pic_spacing = 0.005
 
-    frame1, frame2 = robot_take_pictures(spacing=pic_spacing)
+    # frame1, frame2 = robot_take_pictures(spacing=pic_spacing)
+    frame1, frame2 = robot_take_pictures(spacing=pic_spacing, parent_node=parent_node)
+
     # save the images
     # cv2.imwrite("frame1_low_light.png", frame1)
     # cv2.imwrite("frame2_low_light.png", frame2)
