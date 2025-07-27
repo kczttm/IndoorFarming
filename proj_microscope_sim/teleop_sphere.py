@@ -25,10 +25,7 @@ class MoveRobot(Node):
     def __init__(self, save_dir, device_id=3):
         super().__init__('teleop_camera_publisher')
 
-        # self.center = center
-        # self.radius = radius
         self.device_id = device_id
-
 
         # Generate timestamped folder
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -37,20 +34,25 @@ class MoveRobot(Node):
 
 
         # Initialize camera; device_id = 2 if using laptop
-        try:
-            self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
-            if not self.cap.isOpened():
-                raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
-            print(f"[INFO] Camera {self.device_id} opened successfully")
+        # try:
+        #     self.cap = cv2.VideoCapture(self.device_id, cv2.CAP_V4L2)
+        #     if not self.cap.isOpened():
+        #         raise RuntimeError(f"[ERROR] Failed to open camera device {self.device_id}")
+        #     print(f"[INFO] Camera {self.device_id} opened successfully")
         
-        except Exception as e:
-            print(f"[WARN] Camera initialization failed: {e}")
-            self.cap = None
+        # except Exception as e:
+        #     print(f"[WARN] Camera initialization failed: {e}")
+        #     self.cap = None
 
         
-        # ROS2 image publisher
-        self.image_pub = self.create_publisher(Image, '/endoscope/resize/image', 10)
         self.bridge = CvBridge()
+        self.latest_frame = None
+        self.image_sub = self.create_subscription(
+            Image,
+            '/endoscope/resize/image',
+            self.image_callback,
+            10
+        )
 
         
         # Initialize a cv2.VideoWriter object
@@ -63,32 +65,27 @@ class MoveRobot(Node):
         self.pose_log = []
         self.captured_poses = []
 
+    
+    def image_callback(self, msg):
+        try:
+            self.latest_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except Exception as e:
+            self.get_logger().error(f"Failed to convert image: {e}")
+
 
     def __del__(self):
-        try:
-            if hasattr(self, 'cap') and self.cap:
-                self.cap.release()
-                print("[INFO] Camera released")
-        except Exception:
-            pass
+        # try:
+        #     if hasattr(self, 'cap') and self.cap:
+        #         self.cap.release()
+        #         print("[INFO] Camera released")
+        # except Exception:
+        #     pass
 
         try:
             cv2.destroyAllWindows()
             print("[INFO] OpenCV windows closed")
         except Exception:
             pass
-
-    
-    # def run_yolo_pursuit_client(self, percent_frame_height=0.8):
-    #     cmd = [
-    #         "ros2", "run", "proj_farmhand", "yolo_pursuit_action_client",
-    #         "--ros-args", "-p", f"percent_frame_height:={percent_frame_height}"
-    #     ]
-    #     print(f"[INFO] Launching YOLO Pursuit Client (height={percent_frame_height})...")
-    #     result = subprocess.run(cmd)
-        
-    #     if result.returncode != 0:
-    #         raise RuntimeError("[ERROR] YOLO Pursuit Client failed")
 
     
     def get_EE_camera_tf(self):
@@ -139,33 +136,33 @@ class MoveRobot(Node):
         move_tool_pose_absolute(base, p_des_kinova, speed=speed)
 
 
-    # def estimate_flower_center_and_radius(self, base):
-    #     """
-    #     Automatically detect the flower center and radius using YOLO and ICP
-    #     Sets self.center and self.radius accordingly
-    #     """
+    def estimate_flower_center_and_radius(self, base):
+        """
+        Automatically detect the flower center and radius using YOLO and ICP
+        Sets self.center and self.radius accordingly
+        """
 
-    #     # Move camera to the flower via YOLO (run as subprocess)
-    #     # self.run_yolo_pursuit_client(percent_frame_height=0.8)
-    #     input("[INFO] Press Enter once YOLO has finished auto-centering the flower...")
+        # Estimate flower position in camera frame
+        # H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
+        H_cam_flower, *_ = robot_pose_estimation(parent_node=self, visualize=False, real_flower=False)
+        print("[DEBUG] Flower in camera frame:", H_cam_flower[:3, 3])
 
-    #     # Estimate flower position in camera frame
-    #     H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
+        # Get current EE and compute camera pose
+        H_wd_ee = get_world_EE_HomoMtx(base)
+        H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_cam_tf)
 
-    #     # Get current EE and compute camera pose
-    #     H_wd_ee = get_world_EE_HomoMtx(base)
-    #     H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_cam_tf)
+        # Get flower center in world frame
+        flower_in_world = H_wd_cam @ np.append(H_cam_flower[:3, 3], 1.0)
+        self.center = flower_in_world[:3]
 
-    #     # Get flower center in world frame
-    #     flower_in_world = H_wd_cam @ np.append(H_cam_flower[:3, 3], 1.0)
-    #     self.center = flower_in_world[:3]
-
-    #     # Compute radius (camera to flower distance)
-    #     cam_pos = H_wd_cam[:3, 3]
-    #     self.radius = np.linalg.norm(self.center - cam_pos)
+        # Compute radius (camera to flower distance)
+        cam_pos = H_wd_cam[:3, 3]
+        self.radius = np.linalg.norm(self.center - cam_pos)
         
-    #     print(f"[INFO] Flower center (world): {self.center}")
-    #     print(f"[INFO] Computed radius: {self.radius:.4f} m")
+        print(f"[INFO] Flower center (world): {self.center}")
+        print(f"[INFO] Computed radius: {self.radius:.4f} m")
+
+        self.pose_log = [H_wd_cam.copy()]  # reset and save initial pose after estimating flower
 
 
     def teleop_on_sphere(self, pitch_step=0.5, yaw_step=0.5, speed=0.03):
@@ -176,23 +173,30 @@ class MoveRobot(Node):
             base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
             base.SetServoingMode(base_servo_mode)
 
-            warmup_frames = 30
-            for _ in range(warmup_frames):
-                ret, frame = self.cap.read()
-                if ret:
-                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-                    self.image_pub.publish(msg)
-                rclpy.spin_once(self, timeout_sec=0.01)
+            # warmup_frames = 30
+            # for _ in range(warmup_frames):
+            #     ret, frame = self.cap.read()
+            #     if ret:
+            #         msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+            #         self.image_pub.publish(msg)
+            #     rclpy.spin_once(self, timeout_sec=0.01)
 
             # Auto-sphere initialization
-            # self.estimate_flower_center_and_radius(base)
+            self.estimate_flower_center_and_radius(base)
+
+            frame_counter = 0  # Initialize frame counter
 
             while True:
-                ret, frame = self.cap.read()
-                if ret:
+                rclpy.spin_once(self, timeout_sec=0.01)
+                if self.latest_frame is not None:
+                    frame = self.latest_frame.copy()
                     cv2.imshow("Sphere Teleop", frame)
-                    msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-                    self.image_pub.publish(msg)
+
+                # ret, frame = self.cap.read()
+                # if ret:
+                #     cv2.imshow("Sphere Teleop", frame)
+                #     msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
+                #     self.image_pub.publish(msg)
 
                     if self.recording and self.video_writer is not None:
                         self.video_writer.write(frame)
@@ -200,16 +204,27 @@ class MoveRobot(Node):
 
                 key = cv2.waitKey(10) & 0xFF
 
+                # Periodically update flower center and radius
+                if frame_counter % 50 == 0:  # Update every 50 frames
+                    self.estimate_flower_center_and_radius(base)
+                    print("[INFO] Automatically updated flower center and radius")
+
+                frame_counter += 1  # Increment frame counter
+
                 H_wd_ee = get_world_EE_HomoMtx(base)
                 init_H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_cam_tf)
 
                 moved = False
-                H_cam_flower = np.array([[1, 0, 0, 0],
-                                        [0, 1, 0, 0],
-                                        [0, 0, 1, 0.1],  # +10 cm in Z
-                                        [0, 0, 0, 1]
-                                        ])
-                H_wd_flower = init_H_wd_cam @ H_cam_flower
+                # H_cam_flower = np.array([[1, 0, 0, 0],
+                #                         [0, 1, 0, 0],
+                #                         [0, 0, 1, 0.1],  # +10 cm in Z
+                #                         [0, 0, 0, 1]
+                #                         ])
+                # H_wd_flower = init_H_wd_cam @ H_cam_flower
+                
+                # H_wd_flower = np.eye(4)
+                # H_wd_flower[:3, 3] = self.center
+
                 H_cam_delta = np.eye(4)
                
                 if key == ord('x'):
@@ -249,13 +264,17 @@ class MoveRobot(Node):
 
                 if moved:
                     H_wd_cam = self.pose_log[-1] if self.pose_log else init_H_wd_cam
+                    # H_wd_cam = self.pose_log[-1]
                     
                     # Rotate the camera pose around the flower center
                     T_to_center = np.eye(4)
-                    T_to_center[:3, 3] = -H_wd_flower[:3, 3]
+                    # T_to_center[:3, 3] = -H_wd_flower[:3, 3]
+                    T_to_center[:3, 3] = -self.center
 
                     T_from_center = np.eye(4)
-                    T_from_center[:3, 3] = H_wd_flower[:3, 3]
+                    # T_from_center[:3, 3] = H_wd_flower[:3, 3]
+                    T_from_center[:3, 3] = self.center
+
 
                     H_wd_cam_des = T_from_center @ H_cam_delta @ T_to_center @ H_wd_cam
 
@@ -301,27 +320,35 @@ class MoveRobot(Node):
 
 
     def capture_image(self):
-        ret, frame = self.cap.read()
+        # ret, frame = self.cap.read()
+        frame = self.latest_frame
+        if frame is None:
+            print("[WARN] No image available")
+            return
 
         if len(self.pose_log) == 0:
             print("[WARN] No pose available to save")
             return
         
-        if ret:
-            # Save image
-            img_filename = os.path.join(self.save_dir, f"img_{self.image_counter:04d}.png")
-            cv2.imwrite(img_filename, frame)
+        # if ret:
+        # Save image
+        img_filename = os.path.join(self.save_dir, f"img_{self.image_counter:04d}.png")
+        cv2.imwrite(img_filename, frame)
 
-            # Save pose
-            self.captured_poses.append(self.pose_log[-1].copy())
-            print(f"[INFO] Saved img_{self.image_counter:04d}.png and pose")
+        # Save pose
+        self.captured_poses.append(self.pose_log[-1].copy())
+        print(f"[INFO] Saved img_{self.image_counter:04d}.png and pose")
             
-            self.image_counter += 1
+        self.image_counter += 1
 
 
     def start_video_recording(self, filename="output.avi", fps=10):
-        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        # height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        if self.latest_frame is None:
+            raise RuntimeError("[ERROR] No image available yet to determine resolution.")
+
+        height, width = self.latest_frame.shape[:2]
 
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # or 'MJPG' or 'mp4v'
         save_path = os.path.join(self.save_dir, filename)
@@ -332,6 +359,7 @@ class MoveRobot(Node):
             raise RuntimeError(f"[ERROR] Failed to open video file: {save_path}")
         
         print(f"[INFO] Video recording started: {save_path}")
+
 
     def stop_video_recording(self):
         if self.video_writer:
