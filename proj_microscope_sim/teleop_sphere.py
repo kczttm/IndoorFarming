@@ -184,8 +184,6 @@ class MoveRobot(Node):
             # Auto-sphere initialization
             self.estimate_flower_center_and_radius(base)
 
-            frame_counter = 0  # Initialize frame counter
-
             while True:
                 rclpy.spin_once(self, timeout_sec=0.01)
                 if self.latest_frame is not None:
@@ -203,13 +201,6 @@ class MoveRobot(Node):
 
 
                 key = cv2.waitKey(10) & 0xFF
-
-                # Periodically update flower center and radius
-                if frame_counter % 50 == 0:  # Update every 50 frames
-                    self.estimate_flower_center_and_radius(base)
-                    print("[INFO] Automatically updated flower center and radius")
-
-                frame_counter += 1  # Increment frame counter
 
                 H_wd_ee = get_world_EE_HomoMtx(base)
                 init_H_wd_cam = H_wd_ee @ tf_to_hom_mtx(self.EE_cam_tf)
