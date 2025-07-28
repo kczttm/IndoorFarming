@@ -145,7 +145,6 @@ class MoveRobot(Node):
         # Estimate flower position in camera frame
         # H_cam_flower, *_ = robot_pose_estimation(visualize=False, real_flower=False)
         H_cam_flower, *_ = robot_pose_estimation(parent_node=self, visualize=False, real_flower=False)
-        print("[DEBUG] Flower in camera frame:", H_cam_flower[:3, 3])
 
         # Get current EE and compute camera pose
         H_wd_ee = get_world_EE_HomoMtx(base)
