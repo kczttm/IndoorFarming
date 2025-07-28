@@ -8,10 +8,9 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-import subprocess
 
 from proj_microscope_sim.cam_pose import get_world_EE_HomoMtx
-from proj_farmhand.main_full_pipeline import robot_move_to_flower, robot_pose_estimation
+from proj_farmhand.main_full_pipeline import robot_pose_estimation
 
 from geometry_msgs.msg import TransformStamped
 from gen3_7dof.tool_box import rotation_matrix_to_euler, tf_to_hom_mtx, move_tool_pose_absolute, TCPArguments
@@ -20,10 +19,12 @@ from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
 from kortex_api.autogen.client_stubs.BaseCyclicClientRpc import BaseCyclicClient
 from kortex_api.autogen.messages import Base_pb2
 
+import matplotlib.pyplot as plt
+
 
 class MoveRobot(Node):
     def __init__(self, save_dir, device_id=3):
-        super().__init__('teleop_camera_publisher')
+        super().__init__('teleop_camera')
 
         self.device_id = device_id
 
@@ -95,6 +96,7 @@ class MoveRobot(Node):
         - Rotated 180° about the Z-axis of the EE frame
         - Translated -0.05m along EE Y and +0.11m along EE Z
         """
+
         EE_cam_tf = TransformStamped()
         EE_cam_tf.header.frame_id = "end_effector"
         EE_cam_tf.child_frame_id = "camera"
@@ -162,6 +164,148 @@ class MoveRobot(Node):
         print(f"[INFO] Computed radius: {self.radius:.4f} m")
 
         self.pose_log = [H_wd_cam.copy()]  # reset and save initial pose after estimating flower
+    
+
+    # TODO: super weired movement when using this function
+    def auto_capture_sphere(self, base, speed=0.03):
+        """
+        Automatically move around a virtual sphere centered on the flower and capture images + poses
+        """
+
+        # Function to visualize camera poses on a sphere
+        def visualize_camera_poses(poses, center, draw_axes=False):
+            """
+            Visualize camera poses and their orientation vectors in 3D
+
+            Args:
+                poses (List[np.ndarray]): List of 4x4 camera-to-world matrices
+                center (np.ndarray): The point all cameras look at (default: origin)
+                show_axes (bool): Whether to draw local axes at each camera pose
+            """
+
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(111, projection='3d')
+
+            cam_positions = np.array([H[:3, 3] for H in poses])
+            ax.scatter(*cam_positions.T, color='red', label='Camera Positions')
+
+            for i, H in enumerate(poses):
+                origin = H[:3, 3]
+                forward = H[:3, 2]  # camera's +Z axis (pointing at center)
+
+                # Draw forward direction only
+                ax.quiver(origin[0], origin[1], origin[2],
+                        forward[0], forward[1], forward[2],
+                        length=0.05, color='blue', normalize=True)
+
+                if draw_axes:
+                    R = H[:3, :3]
+                    colors = ['r', 'g', 'b']
+                    for j in range(3):  # x, y, z
+                        ax.quiver(origin[0], origin[1], origin[2],
+                                R[0, j], R[1, j], R[2, j],
+                                length=0.04, color=colors[j], normalize=True)
+
+
+            # Draw object center
+            ax.scatter(center[0], center[1], center[2], color='black', s=50, label='Flower Center')
+
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+            ax.set_title('Camera Poses')
+            ax.legend()
+            ax.set_box_aspect([1, 1, 1])  # Equal scaling
+            plt.show()
+
+
+        # Function to generate poses on a sphere
+        def generate_poses(center, radius, num_arcs=4, points_per_arc=16):
+            poses = []
+            azimuths = np.linspace(0, 2 * np.pi, num_arcs, endpoint=False)
+            # elevations = np.linspace(np.pi / 6, np.pi / 2, points_per_arc)  # 30° to 90°
+            elevations = np.linspace(0, np.pi, points_per_arc)
+
+            for phi in azimuths:
+                for theta in elevations:
+                    # Spherical to Cartesian
+                    # Rotate around Y-axis (not good)
+                    # x = radius * np.sin(theta) * np.cos(phi)
+                    # y = radius * np.sin(theta) * np.sin(phi)
+                    # z = radius * np.cos(theta)
+
+                    # Rotate around base Z-axis
+                    x = radius * np.cos(theta)
+                    y = radius * np.sin(theta) * np.cos(phi)
+                    z = radius * np.sin(theta) * np.sin(phi)
+
+                    # Rotate around X-axis (not good)
+                    # x = radius * np.sin(theta) * np.sin(phi)
+                    # y = radius * np.sin(theta) * np.cos(phi)
+                    # z = radius * np.cos(theta)
+
+                    cam_pos = np.array([x, y, z]) + center
+
+                    # Orientation: face the center
+                    forward = (center - cam_pos)
+                    forward /= np.linalg.norm(forward)
+
+                    # Up vector = world Y
+                    up = np.array([0, 1, 0])
+                    right = np.cross(up, forward)
+                    right /= np.linalg.norm(right)
+                    up = np.cross(forward, right)
+
+                    R = np.stack([right, up, forward], axis=1)
+
+                    H = np.eye(4)
+                    H[:3, :3] = R
+                    H[:3, 3] = cam_pos
+                    poses.append(H)
+
+                    # Debugging prints
+                    print(f"[DEBUG] Pose generated:")
+                    print(f"  Cartesian Position: {cam_pos}")
+                    print(f"  Orientation Matrix (R):\n{R}")
+
+            return poses
+
+
+        print("[INFO] Generating auto-capture poses on virtual sphere...")
+        poses = generate_poses(self.center, self.radius, num_arcs=1, points_per_arc=16)
+        visualize_camera_poses(poses, center=self.center, draw_axes=False)
+
+        for i, H_wd_cam in enumerate(poses):
+            print(f"[INFO] Moving to view {i+1}/{len(poses)}...")
+            self.robot_move_to_camera_pose(base, H_wd_cam, speed=speed)
+            rclpy.spin_once(self, timeout_sec=0.5)
+
+            if self.latest_frame is not None:
+                img_filename = os.path.join(self.save_dir, f"auto_{i:04d}.png")
+                cv2.imwrite(img_filename, self.latest_frame)
+                self.captured_poses.append(H_wd_cam.copy())
+                print(f"[INFO] Captured {img_filename}")
+            else:
+                print(f"[WARN] Skipped capture {i} (no frame available)")
+
+    
+    def run_auto_capture_session(self, speed=0.03, filename="auto_poses_bounds.npy"):
+        tcp_args = TCPArguments()
+        with DeviceConnection.createTcpConnection(tcp_args) as router:
+            base = BaseClient(router)
+            base_servo_mode = Base_pb2.ServoingModeInformation()
+            base_servo_mode.servoing_mode = Base_pb2.SINGLE_LEVEL_SERVOING
+            base.SetServoingMode(base_servo_mode)
+
+            # Step 1: Estimate center + radius
+            self.estimate_flower_center_and_radius(base)
+
+            # Step 2: Automatically capture views
+            self.auto_capture_sphere(base, speed=speed)
+
+            # Step 3: Save LLFF-style poses
+            self.save_pose_log(filename)
+            print(f"[INFO] Auto-capture session complete. Saved to: {os.path.join(self.save_dir, filename)}")
 
 
     def teleop_on_sphere(self, pitch_step=0.5, yaw_step=0.5, speed=0.03):
@@ -361,6 +505,7 @@ class MoveRobot(Node):
 def main():
     rclpy.init()
     robot = MoveRobot(save_dir='/workspaces/isaac_ros-dev/src/proj_farmhand/proj_microscope_sim/data')
-    robot.teleop_on_sphere()  # This kicks everything off, including YOLO client
+    # robot.teleop_on_sphere()
+    robot.run_auto_capture_session(speed=0.03)
     robot.destroy_node()
     rclpy.shutdown()
