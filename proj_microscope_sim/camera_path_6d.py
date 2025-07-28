@@ -15,7 +15,8 @@ def generate_upper_hemisphere_path_with_orientation(radius=1.0, num_points=10):
     """
 
     # Generate points evenly distributed along the upper hemisphere
-    theta = np.linspace(-np.pi / 2, np.pi / 2, num_points)  # Elevation angles
+    # theta = np.linspace(-np.pi / 2, np.pi / 2, num_points)  # Elevation angles
+    theta = np.linspace(0, np.pi / 2, num_points)  # Elevation angles (0 to 90 degrees)
     phi = 0                                                 # Azimuthal angles (Rotation about the Z-axis)
 
 
@@ -53,8 +54,8 @@ def visualize_sphere_with_path(radius=1.0, path_points=None):
     """
 
     # Create the sphere
-    phi = np.linspace(0, 2 * np.pi, 30)
-    theta = np.linspace(0, np.pi, 30)
+    phi = np.linspace(0, 2 * np.pi/4, 30)
+    theta = np.linspace(0, np.pi/2, 30)
     phi, theta = np.meshgrid(phi, theta)
     x = radius * np.sin(theta) * np.cos(phi)
     y = radius * np.sin(theta) * np.sin(phi)
@@ -139,15 +140,15 @@ def visualize_sphere_with_path(radius=1.0, path_points=None):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-    ax.set_title("Upper Hemisphere Path")
+    # ax.set_title("Upper Hemisphere Path")
     ax.legend()
     plt.show()
 
 
 # Generate path points with position and orientation
-# radius = 5.0
-# num_points = 15
-# path_points = generate_upper_hemisphere_path_with_orientation(radius, num_points)
+radius = 5.0
+num_points = 15
+path_points = generate_upper_hemisphere_path_with_orientation(radius, num_points)
 
 # Visualize the sphere and path
-# visualize_sphere_with_path(radius, path_points)
+visualize_sphere_with_path(radius, path_points)
