@@ -1,0 +1,3 @@
+[submodule "proj_microscope_sim/nerf_lab"]
+	path = proj_microscope_sim/nerf_lab
+	url = https://github.com/Haiwei-Shi/nerf_lab.git
